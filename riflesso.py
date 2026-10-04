@@ -198,7 +198,7 @@ def _salva_kv():
 def consenso_attivo():
     try:
         return any(r.strip() == "attivo: sì" for r in CONSENSO.open(encoding="utf-8"))
-    except OSError:
+    except (OSError, ValueError):   # ValueError: byte non UTF-8, vale "spento"
         return False
 
 
@@ -206,7 +206,7 @@ def vettori_attivi():
     """v2: il brivido insieme al sussurro. Interruttore SEPARATO, riga esatta."""
     try:
         return any(r.strip() == "vettori: sì" for r in CONSENSO.open(encoding="utf-8"))
-    except OSError:
+    except (OSError, ValueError):   # ValueError: byte non UTF-8, vale "spento"
         return False
 
 
@@ -220,7 +220,7 @@ def canale_visivo_attivo():
         return False
     try:
         return any(r.strip() == "richiamo visivo: sì" for r in CONSENSO_VISIVO.open(encoding="utf-8"))
-    except OSError:
+    except (OSError, ValueError):   # ValueError: byte non UTF-8, vale "spento"
         return False
 
 
@@ -480,6 +480,8 @@ def via_semantica_attiva():
                        for r in CONSENSO.open(encoding="utf-8"))
     except OSError:
         return True
+    except ValueError:   # il file c'e' ma non si legge: non si sa se ha detto no
+        return False
 
 
 def _sem_dati():
@@ -591,7 +593,12 @@ def soglia():
 
 
 def _cvec(payload):
-    ponte.post("/control-vector", payload, timeout=30)
+    """POST /control-vector. Un codice HTTP d'errore SOLLEVA: ponte.post lo
+    restituisce senza sollevare, e ingoiato qui calma() dava per spento un
+    vettore rimasto acceso sul server (e sentinella e watchdog tacevano)."""
+    stato, _ = ponte.post("/control-vector", payload, timeout=30)
+    if not 200 <= stato < 300:
+        raise RuntimeError(f"/control-vector: HTTP {stato}")
 
 
 # --- ASSUEFAZIONE (progetto 22/07 sera): lo stesso vettore ripetuto si attenua
@@ -661,9 +668,14 @@ def _sentinella():
     vettore è acceso, muore entro 1 secondo. Nessuna domanda, nessun dibattito."""
     while True:
         time.sleep(0.5)
-        if _vettore_vivo[0] and not vettori_attivi():
-            calma()
-            _diario({"kill": "consenso vettoriale ritirato: spento dalla sentinella"})
+        try:
+            if _vettore_vivo[0] and not vettori_attivi() and calma():
+                _diario({"kill": "consenso vettoriale ritirato: spento dalla sentinella"})
+        except Exception as e:   # un giro perso, non la sentinella: riprova tra 0.5 s
+            try:
+                _diario({"sentinella": f"giro fallito: {e!r}"})
+            except Exception:
+                pass
 
 
 def _scaduto():
