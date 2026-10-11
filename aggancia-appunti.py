@@ -3,10 +3,11 @@
 # Gli agganci [id-neurone, cos, salienza] vivono in un sidecar host-only che
 # legge soltanto il motore. La tubatura non deve vedersi.
 #
-# Ricetta invariata: /lux-read (server vivo) -> -BASE -> confronta() per il
-# ricordo più vicino; V34@st -> z-max per la salienza (dottrina D3).
+# Ricetta: /lux-read (server vivo) -> lente L29 - base -> confronta() per il
+# ricordo più vicino; direzioni emotive @ stato -> z-max per la salienza (dottrina D3).
 import json
 import re
+import os
 import sys
 import time
 from pathlib import Path
@@ -16,9 +17,6 @@ import ponte  # noqa: E402  (unica porta verso :8090, gradino zero 26/07)
 
 APPUNTI = Path("/data/workspace/memoria/appunti.md")
 SIDECAR = Path("/data/workspace/memoria/.appunti-agganci.json")
-BASE_PT = "/data/memoria-episodica-affettiva/base-L34.pt"
-EMOVEC = "/data/jspace/out-35b/emovec.pt"
-STATS = "/data/memoria-episodica-affettiva/stats-popolazione.pt"
 LAYER = ponte.LAYER_SONDA
 SOGLIA = 0.56        # 28/07, spazio L29-lente: p99 del rumore (sonde-soglie.py,
                      # validata). Permissiva di proposito: ritenta ogni 24h.
@@ -69,8 +67,9 @@ def aggancio_vero(testo):
         stz = torch.load("/data/memoria-episodica-affettiva/stats-emo-v2.pt",
                          weights_only=True)
         if stz.get("n", 0) >= 30:
-            d18 = torch.load("/data/jspace/out-35b/emovec-18.pt",
-                             weights_only=True)
+            # 30/09: i vettori emotivi dello stesso modello delle stats
+            d18 = torch.load(os.environ.get("OUT_35B", "/data/jspace/out-35b")
+                             + "/emovec-18.pt", weights_only=True)
             V = torch.stack([d18["vectors"][e][LAYER] /
                              d18["vectors"][e][LAYER].norm()
                              for e in d18["vectors"]]).float()

@@ -40,7 +40,6 @@ GRIGLIE_MAX_FILE = "/data/memoria-episodica-affettiva/.griglie-max"
 # manopola: dare lo stesso α a un ricordo lontano e a uno vicino annullava
 # la modulazione, e il cursore stava a 0.05, cinque volte sopra il tetto.
 ARMATA_FILE = "/data/memoria-episodica-affettiva/.notturna-armata"
-CE_STORIA = "/data/memoria-episodica-affettiva/.ce-storia.json"
 PENS_KV = "/dev/shm/agente-kv/pensatoio.kv"
 LLAMA = "http://127.0.0.1:8090"
 
@@ -83,43 +82,6 @@ def _griglie(marker_dt):
             "scartate": sca, "in_corso": _pgrep("distilla-ricordo.py")}
 
 
-def _codec():
-    try:
-        lines = open(LOG, errors="replace").read().splitlines()
-    except OSError:
-        return {"run": None}
-    start = None
-    for i, line in enumerate(lines):
-        if re.search(r"codec: \d+ parametri", line):
-            start = i
-    if start is None:
-        return {"run": None}
-    run = lines[start:]
-    m = re.search(r"^([\d-]+ \d\d:\d\d)", run[0])
-    params = re.search(r"(\d+) parametri", run[0])
-    if _pgrep("codec-lux.py"):
-        stato, dett = "training", "in corso"
-    elif any("CODEC-COMPLETO" in r for r in run):
-        stato = "completo"
-        s = [r for r in run if "CODEC-SALVATO" in r]
-        mm = re.search(r"epoca \d+, CE held-out [\d.]+", s[-1]) if s else None
-        dett = mm.group(0) if mm else ""
-    else:
-        stato, dett = "interrotto", "nessun CODEC-COMPLETO"
-    epoche = []
-    for r in run:
-        mm = re.search(r"epoca +(\d+): CE train ([\d.]+) \| CE held-out ([\d.]+)", r)
-        if mm:
-            epoche.append({"n": mm.group(1), "train": mm.group(2), "held": mm.group(3)})
-    best = None
-    for r in run:
-        if "checkpoint su disco" in r:
-            mm = re.search(r"epoca \d+, CE held-out [\d.]+", r)
-            best = mm.group(0) if mm else None
-    return {"run": m.group(1) if m else "?", "parametri": params.group(1) if params else "?",
-            "stato": stato, "dettaglio": dett, "epoche": epoche[-12:], "best": best}
-
-
 def _tier(base):
     out = []
     for nome in KV_FILES:
@@ -155,7 +117,7 @@ def _sistema():
             "ultima_notturna": time.strftime("%d/%m %H:%M", time.localtime(mk)) if mk else "mai",
             "prossima": ("adesso" if mk + 21600 <= time.time()
                          else time.strftime("%d/%m %H:%M", time.localtime(mk + 21600))),
-            "notturna_in_corso": _pgrep("notte-memoria.sh|notte-distilla.sh|distilla-ricordo.py|codec-lux.py")}
+            "notturna_in_corso": _pgrep("notte-memoria.sh|notte-distilla.sh|distilla-ricordo.py|tagging35b.py")}
 
 
 def _gpu():
@@ -173,32 +135,8 @@ def _gpu():
 
 
 def _storico():
-    """Per giorno: miglior (minima) CE held-out dal log + ricordi cumulativi."""
+    """Per giorno: ricordi cumulativi nel grafo. (30/09: tolta la curva CE del codec v1, archiviato)"""
     ce = {}
-    try:
-        for line in open(LOG, errors="replace"):
-            m = re.match(r"^(\d{4}-\d\d-\d\d).*CE held-out ([\d.]+)", line)
-            if m:
-                d, v = m.group(1), float(m.group(2))
-                if d not in ce or v < ce[d]:
-                    ce[d] = v
-    except OSError:
-        pass
-    # notte-distilla TRONCA il log a ogni run (scoperto 22/07): i minimi
-    # giornalieri si accumulano qui, così la storia sopravvive alle rotazioni
-    try:
-        storia = json.load(open(CE_STORIA))
-    except (OSError, ValueError):
-        storia = {}
-    cambiato = False
-    for d, v in ce.items():
-        if d not in storia or v < storia[d]:
-            storia[d] = v
-            cambiato = True
-    if cambiato:
-        with open(CE_STORIA, "w") as fh:
-            json.dump(storia, fh)
-    ce = storia
     ric = {}
     try:
         c = sqlite3.connect("file:" + MEMDB + "?mode=ro", uri=True)
@@ -243,7 +181,7 @@ def dati():
             "notturna_armata": os.path.exists(ARMATA_FILE),
             "griglie_max": _griglie_max(),
             "gpu": _gpu(), "storico": _storico(),
-            "griglie": _griglie(marker_dt), "codec": _codec(), "sistema": _sistema()}
+            "griglie": _griglie(marker_dt), "sistema": _sistema()}
 
 
 # ---------------- azioni (POST /azione) ----------------
@@ -285,7 +223,7 @@ def _lancia_notturna(motivo):
         p.wait(timeout=3)
         return True, open(AZLOG).read().splitlines()[-1]
     except subprocess.TimeoutExpired:
-        return True, "notturna avviata: lavora in sottofondo (segui Griglie/Codec)"
+        return True, "notturna avviata: lavora in sottofondo (segui Griglie)"
 
 
 def _watcher_eos():
@@ -401,12 +339,18 @@ PAGINA = r"""<!doctype html>
   --barra-fondo:#eceef1; --btn:#f0f1f4; --btn-bordo:#d5d9de;
   --ric:#0e7a86; --ok-soft:#cfe8d2;
 }
-@media (prefers-color-scheme: dark){:root{
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#14161a; --card:#1d2025; --ink:#e8eaed; --ink2:#a6adb6; --muted:#767e88;
   --bordo:#2b2f36; --ok:#57ab5a; --warn:#c69026; --err:#e5654e; --accent:#8b88f8;
   --barra-fondo:#2b2f36; --btn:#262a31; --btn-bordo:#3a3f48;
   --ric:#4cc4d4; --ok-soft:#23432a;
 }}
+:root[data-theme="dark"]{
+  --bg:#14161a; --card:#1d2025; --ink:#e8eaed; --ink2:#a6adb6; --muted:#767e88;
+  --bordo:#2b2f36; --ok:#57ab5a; --warn:#c69026; --err:#e5654e; --accent:#8b88f8;
+  --barra-fondo:#2b2f36; --btn:#262a31; --btn-bordo:#3a3f48;
+  --ric:#4cc4d4; --ok-soft:#23432a;
+}
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif;padding:20px}
 header{display:flex;align-items:baseline;gap:10px;max-width:1060px;margin:0 auto 16px}
@@ -461,7 +405,7 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
 <span class="chip stato-warn" id="notturna-chip"></span></header>
 <main>
 <section><h2>Sistema</h2>
-  <div class="riga"><span class="k">35B <i class="info" data-tip="35 miliardi di parametri: il modello che fa girare l'agente (Qwen3.6-35B, quantizzato Q8_0).">ⓘ</i> (:8090)</span><span id="s-35b">…</span></div>
+  <div class="riga"><span class="k">35B <i class="info" data-tip="35 miliardi di parametri: il modello che fa girare l'agente (Occamy-1.0, post-training del Qwen3.6-35B, quantizzato Q8_0).">ⓘ</i> (:8090)</span><span id="s-35b">…</span></div>
   <div class="riga"><span class="k">slot</span><span id="s-busy">…</span></div>
   <div class="riga"><span class="k">riflesso (:8091)</span><span id="s-rifl">…</span></div>
   <div class="riga"><span class="k">pensatoio</span><span id="s-pens">…</span></div>
@@ -491,7 +435,7 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
   <div class="avviso" style="margin:0 0 6px">
     VRAM <i class="info" data-tip="La memoria della scheda video: lo slot vivo, quello su cui il modello lavora adesso.">ⓘ</i> ·
     RAM <i class="info" data-tip="La memoria di sistema (/dev/shm): copia velocissima, salvata a ogni risposta, ma sparisce allo spegnimento.">ⓘ</i> ·
-    SSD <i class="info" data-tip="Il disco: copia persistente, sopravvive a riavvii e blackout. Consolidata ogni 5 messaggi.">ⓘ</i>
+    SSD <i class="info" data-tip="Il disco: copia persistente, sopravvive a riavvii e blackout. La copia automatica è spenta dal 23/07 (KV_SSD_ATTIVO in riflesso.py): qui si consolida solo a mano.">ⓘ</i>
   </div>
   <div class="bottoni">
     <button onclick="fai_conf('slot_erase','Svuoto lo slot dal server (evict)? Quello che c\'è in VRAM va perso se non è salvato in RAM o SSD.')">🗑 svuota slot (evict)</button>
@@ -517,16 +461,9 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
   <div id="g-corso"></div>
   <table id="g-tab"></table>
 </section>
-<section><h2>Codec</h2>
-  <div class="riga"><span class="k">run</span><span class="num" id="c-run">…</span></div>
-  <div class="riga"><span class="k">stato</span><span class="chip" id="c-stato">…</span></div>
-  <div class="riga"><span class="k">miglior checkpoint <i class="info" data-tip="Il salvataggio del codec con l'errore più basso sugli esempi mai visti in addestramento: è la versione che verrà usata.">ⓘ</i></span><span class="num stato-ok" id="c-best">…</span></div>
-  <table id="c-tab"></table>
-</section>
-<section class="largo"><h2>Storia <i class="info" data-tip="Per ogni giorno: il miglior CE held-out raggiunto dal codec (più basso = ricostruisce meglio) e quanti ricordi vivono nel grafo.">ⓘ</i></h2>
+<section class="largo"><h2>Storia <i class="info" data-tip="Per ogni giorno: quanti ricordi vivono nel grafo.">ⓘ</i></h2>
   <div id="grafico"><span class="vuoto">nessun dato</span></div>
-  <div class="avviso"><span style="color:var(--accent)">●</span> miglior CE held-out del giorno, scala sinistra ·
-    <span style="color:var(--ric)">●</span> ricordi nel grafo, scala destra</div>
+  <div class="avviso"><span style="color:var(--ric)">●</span> ricordi nel grafo</div>
 </section>
 </main>
 <footer>aggiornamento automatico ogni 3 secondi, si muovono solo i valori</footer>
@@ -699,21 +636,6 @@ async function giro(){
         `<td>${r.match}</td><td>${r.sec}s</td>`+
         `<td class="${r.ok?"ok":"err"}">${r.ok?"✔ agganciata":"✘ scartata"}</td></tr>`).join("")
     : '<tr><td class="vuoto">nessuna griglia in questo ciclo</td></tr>';
-  const c=d.codec;
-  if(c.run===null){ $("c-run").textContent="nessun run nel log"; return; }
-  $("c-run").textContent=c.run+" · "+Number(c.parametri).toLocaleString("it")+" parametri";
-  const mappa={training:["▶ training in corso","stato-warn"],
-               completo:["✔ completo","stato-ok"],interrotto:["✘ interrotto","stato-err"]};
-  $("c-stato").textContent=mappa[c.stato][0]+(c.dettaglio?" · "+c.dettaglio:"");
-  $("c-stato").className="chip "+mappa[c.stato][1];
-  $("c-best").textContent=c.best||"nessuno";
-  const bestN=c.best?(c.best.match(/epoca (\d+)/)||[])[1]:null;
-  const CE_TIP='CE, Cross-Entropy (entropia incrociata): quanto il codec sbaglia nel ricostruire. Più bassa è, meglio è. «train» = sugli esempi di addestramento; «held-out» = su esempi tenuti fuori, misura se generalizza davvero.';
-  $("c-tab").innerHTML=c.epoche.length
-    ? `<tr><th>epoca</th><th>CE <i class="info" data-tip="${CE_TIP}">ⓘ</i> train</th><th>CE held-out</th></tr>`+
-      c.epoche.map(e=>{const b=e.n===bestN?' class="ok"':"";
-        return `<tr><td${b}>${e.n}${b?" ★":""}</td><td${b}>${e.train}</td><td${b}>${e.held}</td></tr>`;}).join("")
-    : "";
 }
 const gmax=$("gmax");
 gmax.addEventListener("input",()=>{ $("gmax-val").textContent=gmax.value; gmaxTouch=Date.now(); });
