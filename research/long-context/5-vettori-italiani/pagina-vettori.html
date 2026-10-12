@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vettori emotivi italiani</title>
+<style>
+/* stile della dashboard (notturna-web.py) e della pagina emozioni per layer */
+:root{color-scheme:light;
+  --bg:#f4f3ef; --card:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
+  --bordo:#e6e5e0; --accent:#2a78d6; --btn:#efeee9; --btn-bordo:#e6e5e0; --vuoto:#efeee9;
+  --pos:#c0362c; --neg:#2a78d6; --mid:#efeee9; --linea:#2a78d6; --caso:#8a8984;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a; --vuoto:#222220;
+  --pos:#ea6b60; --neg:#3987e5; --mid:#262624; --linea:#3987e5; --caso:#8f8e86;
+}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a; --vuoto:#222220;
+  --pos:#ea6b60; --neg:#3987e5; --mid:#262624; --linea:#3987e5; --caso:#8f8e86;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 60px}
+header,main{max-width:1100px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;margin-bottom:14px}
+header h1{font-size:22px;font-weight:700}
+header .ora{color:var(--muted)}
+header .home{margin-left:auto;background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);border-radius:8px;padding:5px 12px;text-decoration:none}
+header .home:hover{border-color:var(--accent)}
+section{background:var(--card);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+h2{font-size:16px;font-weight:600;margin-bottom:6px}
+.nota{font-size:12.5px;color:var(--ink2);margin-bottom:10px}
+.passi{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.passo{border:1px solid var(--bordo);border-radius:10px;padding:10px;position:relative}
+.passo b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.passo span{font-size:12.5px;color:var(--ink2)}
+.passo:not(:last-child)::after{content:"→";position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:var(--muted);background:var(--card)}
+.bottoni{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+button{background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);border-radius:8px;padding:4px 10px;font:inherit;font-size:12.5px;cursor:pointer}
+button:hover,button.on{border-color:var(--accent)}
+button .pt{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.tela{position:relative;width:100%}
+canvas{display:block;width:100%;touch-action:none}
+#tip{position:fixed;pointer-events:none;background:var(--card);border:1px solid var(--bordo);border-radius:8px;padding:5px 8px;font-size:12.5px;display:none;z-index:9;box-shadow:0 4px 14px #0003}
+.due{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.due section{display:flex;flex-direction:column}.due .nota{flex:1}   /* grafici e legende allineati in basso */
+.legenda{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);margin-top:8px;flex-wrap:wrap}
+.legenda i{display:inline-block;width:16px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.scala{display:inline-flex;gap:1px}.scala i{width:14px;height:10px;border-radius:2px}
+@media (max-width:640px){.passi{grid-template-columns:1fr}.passo:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-12px;transform:translateX(-50%)}.due{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header><h1>Vettori emotivi italiani</h1><span class="ora" id="ora"></span><a class="home" href="/">🏠 Home</a></header>
+<main>
+<section>
+  <h2>Come sono nati</h2>
+  <p class="nota">Ogni testo del diario è letto da Occamy: per ogni layer da 15 a 32 si prende lo stato interno medio sui token del testo.
+  Il vettore di un'emozione è la differenza fra la media dei suoi testi e la media delle altre 50 emozioni. I testi non contengono il nome dell'emozione: il vettore porta lo stato, non la parola.</p>
+  <div class="passi" id="passi"></div>
+</section>
+
+<section>
+  <h2>La nuvola dei testi</h2>
+  <p class="nota">Ogni punto è un testo, colorato con la sua emozione; i cerchi grandi sono le medie. Gli assi sono le due direzioni lungo cui le 51 medie si separano di più a quel layer. Passa sopra un'emozione per isolarla, clicca per fissarla, clicca fuori per tornare a tutte.</p>
+  <div class="bottoni" id="lnuv"></div>
+  <div class="tela"><canvas id="nuvola"></canvas></div>
+  <div class="bottoni" id="emobtn" style="margin-top:10px"></div>
+</section>
+
+<div class="due">
+<section>
+  <h2>Quanto si separano le emozioni, layer per layer</h2>
+  <p class="nota">Varianza fra le medie delle emozioni divisa per la varianza dentro la stessa emozione. Più alto = emozioni più distinguibili. L'asse parte da 0,18.</p>
+  <div class="tela"><canvas id="sep"></canvas></div>
+  <div class="legenda"><span><i style="background:var(--linea)"></i>separazione</span><span id="picco"></span></div>
+</section>
+<section>
+  <h2>Distanza dai vettori inglesi</h2>
+  <p class="nota">Coseno medio fra vettore italiano e vettore inglese della stessa emozione (gradiente sulla parola inglese), contro lo stesso confronto fatto con un'emozione a caso. <span id="vicina"></span></p>
+  <div class="tela"><canvas id="vsen"></canvas></div>
+  <div class="legenda"><span><i style="background:var(--linea)"></i>stessa emozione</span><span><i style="background:var(--caso)"></i>emozione a caso</span></div>
+</section>
+</div>
+
+<section>
+  <h2>Somiglianza fra i vettori</h2>
+  <p class="nota">Coseno fra i vettori di due emozioni. Rosso = puntano dalla stessa parte, blu = opposti, neutro = indipendenti. Passa sopra una casella per leggere la coppia.</p>
+  <div class="bottoni" id="lsom"></div>
+  <div class="tela"><canvas id="som"></canvas></div>
+  <div class="legenda">−1 <span class="scala" id="scala"></span> +1</div>
+</section>
+
+</main>
+<div id="tip"></div>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const tip = $('tip');
+function mostra(html, e) { tip.innerHTML = html; tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (e.clientY + 12) + 'px'; }
+const nascondi = () => tip.style.display = 'none';
+function tela(id, h) {   // canvas nitido alla densita' dello schermo
+  const c = $(id), r = window.devicePixelRatio || 1, w = c.parentElement.clientWidth;
+  c.width = w * r; c.height = h * r; c.style.height = h + 'px';
+  const g = c.getContext('2d'); g.setTransform(r, 0, 0, r, 0, 0); return [g, w, h];
+}
+const hex2 = (h, a) => h + Math.round(a * 255).toString(16).padStart(2, '0');
+function divergente(v) {   // -1 blu, 0 neutro, +1 rosso (interpolazione in RGB fra i token)
+  const p = v >= 0 ? css('--pos') : css('--neg'), m = css('--mid'), t = Math.min(1, Math.abs(v));
+  const a = [1, 3, 5].map(i => parseInt(m.substr(i, 2), 16)), b = [1, 3, 5].map(i => parseInt(p.substr(i, 2), 16));
+  return `rgb(${a.map((x, i) => Math.round(x + (b[i] - x) * t)).join(',')})`;
+}
+
+let D, LN = 29, LS = 29, fuoco = null, sopra = null;
+fetch('dati.json').then(r => r.json()).then(d => { D = d; avvia(); });
+
+function avvia() {
+  $('ora').textContent = 'calcolati il ' + D.data.split('-').reverse().join('/');
+  const reg = Object.entries(D.registri);
+  $('passi').innerHTML = [
+    [D.n_testi.toLocaleString('it'), 'testi del diario italiano: ' + reg.map(([r, n]) => `${r.replace('-it-v2', '')} ${n.toLocaleString('it')}`).join(', ')],
+    ['18 × 2048', 'stati interni letti per ogni testo (layer 15–32, media sui token)'],
+    [Math.min(...D.per_emo.map(x => x[0] + x[1])) + '–' + Math.max(...D.per_emo.map(x => x[0] + x[1])), 'testi per emozione, mediati'],
+    ['media − altre 50', 'il vettore di ogni emozione, layer per layer'],
+    ['51 × 18', 'vettori pronti per lo steering']
+  ].map(([b, s]) => `<div class="passo"><b>${b}</b><span>${s}</span></div>`).join('');
+  $('lnuv').innerHTML = Object.keys(D.nuvole).map(l => `<button data-l="${l}">L${l}</button>`).join('');
+  $('lsom').innerHTML = Object.keys(D.somiglianza).map(l => `<button data-l="${l}">L${l}</button>`).join('');
+  $('emobtn').innerHTML = D.emo.map((e, i) => `<button data-i="${i}"><span class="pt" style="background:${e.col}"></span>${e.it}</button>`).join('');
+  $('lnuv').onclick = e => { const b = e.target.closest('button'); if (b) { LN = +b.dataset.l; nuvola(); } };
+  $('lsom').onclick = e => { const b = e.target.closest('button'); if (b) { LS = +b.dataset.l; somiglianza(); } };
+  $('emobtn').onmouseover = e => { const b = e.target.closest('button'); sopra = b ? +b.dataset.i : null; nuvola(); };
+  $('emobtn').onmouseleave = () => { sopra = null; nuvola(); };
+  $('emobtn').onclick = e => { const b = e.target.closest('button'); if (!b) return; e.stopPropagation(); fuoco = fuoco === +b.dataset.i ? null : +b.dataset.i; nuvola(); };
+  document.addEventListener('click', e => { if (fuoco != null && !e.target.closest('button,canvas')) { fuoco = null; nuvola(); } });
+  const sc = []; for (let v = -1; v <= 1.001; v += 0.2) sc.push(`<i style="background:${divergente(v)}"></i>`); $('scala').innerHTML = sc.join('');
+  { const s = D.separazione, j = s.indexOf(Math.max(...s)); $('picco').textContent = `● massimo a L${D.layer[j]}: ${s[j].toFixed(3).replace('.', ',')}`; }
+  $('vicina').textContent = `A L24 il vettore inglese più vicino è quello della stessa emozione in ${D.stessa_vicina_L24} casi su ${D.emo.length}.`;
+  disegna(); addEventListener('resize', disegna);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', disegna);
+}
+function disegna() { nuvola(); separazione(); vsen(); somiglianza(); }
+
+// nuvola dei testi
+let puntiNuv = [];
+function nuvola() {
+  document.querySelectorAll('#lnuv button').forEach(b => b.classList.toggle('on', +b.dataset.l === LN));
+  document.querySelectorAll('#emobtn button').forEach(b => b.classList.toggle('on', +b.dataset.i === fuoco));
+  const w0 = $('nuvola').parentElement.clientWidth, [g, w, h] = tela('nuvola', Math.min(560, Math.max(320, w0 * 0.62)));
+  const N = D.nuvole[LN], E = D.etichette, sel = sopra ?? fuoco, m = 14;
+  const X = x => m + (x + 1) / 2 * (w - 2 * m), Y = y => h - m - (y + 1) / 2 * (h - 2 * m);
+  g.clearRect(0, 0, w, h);
+  for (let k = 0; k < E.length; k++) {
+    const a = sel == null ? 0.55 : E[k] === sel ? 0.95 : 0.05;
+    g.fillStyle = hex2(D.emo[E[k]].col, a); g.fillRect(X(N.x[k]) - 1.5, Y(N.y[k]) - 1.5, 3, 3);
+  }
+  puntiNuv = D.emo.map((e, i) => [X(N.cx[i]), Y(N.cy[i]), i]);
+  for (const [x, y, i] of puntiNuv) {
+    if (sel != null && i !== sel) continue;
+    g.beginPath(); g.arc(x, y, i === sel ? 7 : 5, 0, 7); g.fillStyle = D.emo[i].col; g.fill();
+    g.lineWidth = 2; g.strokeStyle = css('--card'); g.stroke();
+    if (i === sel) { g.fillStyle = css('--ink'); g.font = '600 13px system-ui'; g.fillText(D.emo[i].it, x + 10, y + 4); }
+  }
+}
+$('nuvola').addEventListener('pointermove', e => {
+  const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const v = puntiNuv.map(([a, b, i]) => [Math.hypot(a - x, b - y), i]).sort((p, q) => p[0] - q[0])[0];
+  if (v && v[0] < 14) { const em = D.emo[v[1]]; mostra(`${em.emoji} <b>${em.it}</b> (${em.en}) · ${D.per_emo[v[1]][0] + D.per_emo[v[1]][1]} testi`, e); }
+  else nascondi();
+});
+$('nuvola').addEventListener('pointerleave', nascondi);
+$('nuvola').addEventListener('click', e => {
+  const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const v = puntiNuv.map(([a, b, i]) => [Math.hypot(a - x, b - y), i]).sort((p, q) => p[0] - q[0])[0];
+  fuoco = v && v[0] < 14 ? (fuoco === v[1] ? null : v[1]) : null; nuvola();
+});
+
+// grafico a linee generico: serie [[valori, colore]], asse x = layer
+function linee(id, serie, fmt, alto, base) {   // base: inizio dell'asse verticale (altrimenti 0)
+  const [g, w, h] = tela(id, 300), L = D.layer, m = {l: 40, r: 10, t: 22, b: 26};
+  const tutti = serie.flatMap(s => s[0]), lo = base ?? Math.min(0, ...tutti), hi = base != null ? Math.max(...tutti) + 0.01 : Math.max(...tutti) * 1.08;
+  const X = j => m.l + j / (L.length - 1) * (w - m.l - m.r), Y = v => h - m.b - (v - lo) / (hi - lo) * (h - m.t - m.b);
+  g.clearRect(0, 0, w, h); g.font = '11px system-ui'; g.fillStyle = css('--muted'); g.strokeStyle = css('--bordo'); g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; g.beginPath(); g.moveTo(m.l, Y(v)); g.lineTo(w - m.r, Y(v)); g.stroke(); g.fillText(fmt(v), 2, Y(v) + 4); }
+  L.forEach((l, j) => { if (l % 3 === 0 || j === 0) g.fillText('L' + l, X(j) - 9, h - 8); });
+  for (const [v, c] of serie) { g.strokeStyle = c; g.lineWidth = 2; g.beginPath(); v.forEach((y, j) => j ? g.lineTo(X(j), Y(y)) : g.moveTo(X(j), Y(y))); g.stroke(); }
+  if (alto != null) { const [v] = serie[0], j = v.indexOf(Math.max(...v)); g.fillStyle = css('--linea'); g.beginPath(); g.arc(X(j), Y(v[j]), 4, 0, 7); g.fill();
+    g.fillStyle = css('--ink'); g.font = '600 12px system-ui'; g.fillText(`massimo a L${L[j]}`, Math.min(X(j) - 30, w - 100), Y(v[j]) - 9); }
+  $(id).onpointermove = e => { const r = e.target.getBoundingClientRect(), j = Math.max(0, Math.min(L.length - 1, Math.round((e.clientX - r.left - m.l) / (w - m.l - m.r) * (L.length - 1))));
+    mostra(`<b>L${L[j]}</b> · ` + serie.map(s => fmt(s[0][j])).join(' · '), e); };
+  $(id).onpointerleave = nascondi;
+}
+const separazione = () => linee('sep', [[D.separazione, css('--linea')]], v => v.toFixed(2), true, 0.18);   // 12/10: da 0,18 per vedere il picco
+const vsen = () => { const media = D.layer.map((_, j) => D.vs_en.reduce((s, r) => s + r[j], 0) / D.vs_en.length);
+  linee('vsen', [[media, css('--linea')], [D.vs_en_caso, css('--caso')]], v => v.toFixed(2)); };
+
+// matrice di somiglianza 51x51
+function somiglianza() {
+  document.querySelectorAll('#lsom button').forEach(b => b.classList.toggle('on', +b.dataset.l === LS));
+  const S = D.somiglianza[LS], n = S.length, w0 = $('som').parentElement.clientWidth, lato = Math.min(w0, 640);
+  const [g, w, h] = tela('som', lato), etich = w0 > 500 ? 92 : 0, c = (lato - etich) / n;
+  g.clearRect(0, 0, w, h); g.font = '10px system-ui'; g.fillStyle = css('--ink2');
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = css('--ink2'); if (etich && c >= 9) g.fillText(D.emo[i].it.slice(0, 15), 0, etich + i * c + c * 0.8);
+    for (let j = 0; j < n; j++) { g.fillStyle = i === j ? css('--vuoto') : divergente(S[i][j]); g.fillRect(etich + j * c, etich + i * c, c - 0.5, c - 0.5); }
+    if (etich && c >= 9) { g.save(); g.translate(etich + i * c + c * 0.8, etich - 3); g.rotate(-Math.PI / 2); g.fillStyle = css('--ink2'); g.fillText(D.emo[i].it.slice(0, 15), 0, 0); g.restore(); }
+  }
+  $('som').onpointermove = e => { const r = e.target.getBoundingClientRect(), j = Math.floor((e.clientX - r.left - etich) / c), i = Math.floor((e.clientY - r.top - etich) / c);
+    if (i >= 0 && j >= 0 && i < n && j < n && i !== j) mostra(`<b>${D.emo[i].it}</b> · <b>${D.emo[j].it}</b>: ${S[i][j].toFixed(2)} (L${LS})`, e); else nascondi(); };
+  $('som').onpointerleave = nascondi;
+}
+
+</script>
+</body></html>

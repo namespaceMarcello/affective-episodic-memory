@@ -27,13 +27,15 @@ body{margin:0;background:#0b0e1a;color:#dbe2f0;font:14px/1.45 system-ui,sans-ser
 #leg .s{width:22px;height:3px;border-radius:2px;flex:none}
 #leg .h{color:#8ea0c9;margin-top:6px}
 @media (max-width:640px){#cerca{width:calc(100vw - 24px);left:12px;right:auto;top:auto;bottom:12px}#hud{display:none}#leg{top:10px;bottom:auto}#ricordo{width:calc(100vw - 48px)}}
+#home{display:block;width:max-content;margin:0 0 6px auto;padding:5px 12px;border-radius:8px;border:1px solid #2c3760;background:#121729;color:#dbe2f0;text-decoration:none;font-size:14px}
+#home:hover{border-color:#5b7bd5}
 #carica{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#8ea0c9}
 </style>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 </head><body>
 <div id="carica">carico il Lux…</div>
 <div id="hud"><b>Lux __VERSIONE__</b><br>trascina = ruota · tasto destro = sposta · rotella = zoom<br>clic su una pallina = engramma e onda sui suoi archi · clic su un circoletto = arco · clic su un numero di ricordo = il ricordo<br><span id="stat"></span></div>
-<div id="cerca"><input id="q" placeholder="cerca una parola…" autocomplete="off">
+<div id="cerca"><a id="home" href="/">🏠 Home</a><input id="q" placeholder="cerca una parola…" autocomplete="off">
 <input id="rq" placeholder="richiama: scrivi una frase e premi invio" autocomplete="off" style="margin-top:6px"><div id="esiti"></div></div>
 <div id="ricordo"><span class="x" id="rx">✕</span><b id="rt"></b><div class="t" id="rtesto"></div><div class="alt" id="ralt"></div></div>
 <div id="pop"></div>

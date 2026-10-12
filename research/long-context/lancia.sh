@@ -41,6 +41,15 @@ $PY -u 5-vettori-italiani/emovec_it.py 2>&1 | tee -a 5-vettori-italiani/log-emov
 echo "== fine $(date +%T)"
 exit 0
 fi
+if [[ $FASI == confronto ]]; then
+echo "== confronto vettori italiani / inglesi $(date +%T)"
+mkdir -p 4-steering-per-layer/slot
+server 143360
+HF_HOME=/data/jspace/hf HF_HUB_OFFLINE=1 $PY -u 4-steering-per-layer/steering_layer.py confronto 2>&1 | tee -a 4-steering-per-layer/log-confronto.txt
+echo "== fine $(date +%T)"
+exit 0
+fi
+
 if [[ $FASI == layer ]]; then
 echo "== steering per layer $(date +%T)"
 mkdir -p 4-steering-per-layer/slot

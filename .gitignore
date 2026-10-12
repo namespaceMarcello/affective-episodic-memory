@@ -32,3 +32,6 @@ research/long-context/4-steering-per-layer/contesti-layer.json
 research/long-context/3-taratura/taratura-emozioni*.json
 research/long-context/5-vettori-italiani/indice-diario.json
 research/long-context/5-vettori-italiani/fatti.txt
+research/long-context/5-vettori-italiani/vettori-pagina/
+research/long-context/5-vettori-italiani/stati-diario.npy
+research/long-context/4-steering-per-layer/confronto-*.jsonl

@@ -395,8 +395,9 @@ document.addEventListener("DOMContentLoaded",disegnaTema);
   <div class="bottoni">
     <button onclick="finestra('/')">🧠 stream del reasoning</button>
     <button onclick="finestra('/diario')">📖 diario del riflesso</button>
-    <button onclick="window.open('/lux3d/','_blank')">✨ Lux in 3D</button>
-    <button onclick="window.open('/emozioni/','_blank')">🎭 emozioni per layer</button>
+    <button onclick="location.href='/lux3d/'">✨ Lux in 3D</button>
+    <button onclick="location.href='/emozioni/'">🎭 emozioni per layer</button>
+    <button onclick="location.href='/vettori/'">🧭 vettori italiani</button>
   </div>
 </section>
 <section><h2>Riposo</h2>
@@ -454,7 +455,7 @@ const CONFERME={vram_ram:"Salvo lo SLOT VIVO in RAM come «F»? Sovrascrive la c
   ssd_ram:"Riporto «F» da SSD in RAM? La copia RAM (che può essere più fresca) viene sovrascritta."};
 // 25/07: le finestre dell'agente vivono sulla 8096, stesso host da cui arriva questa
 // pagina (così vale anche se la dashboard è aperta con un altro nome host).
-function finestra(p){window.open(location.protocol+"//"+location.hostname+":8096"+p,"_blank");}
+function finestra(p){location.href=location.protocol+"//"+location.hostname+":8096"+p;}
 async function fai(op,nome){
   const c=CONFERME[op]; if(c && !confirm(c.replaceAll("F",nome))) return;
   $("esito").textContent="… in corso ("+op.replace("_"," → ")+" "+(nome||"")+")";
@@ -598,6 +599,7 @@ giro(); setInterval(giro,3000);
 
 
 EMOZIONI = "/data/memoria-episodica-affettiva/research/long-context/4-steering-per-layer/emozioni-layer"
+VETTORI = "/data/memoria-episodica-affettiva/research/long-context/5-vettori-italiani/vettori-pagina"
 
 class H(BaseHTTPRequestHandler):
     def _manda(self, corpo, tipo):
@@ -623,6 +625,15 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 self._manda(f"Lux 3D non raggiungibile ({e}): systemctl --user status lux3d".encode(),
                             "text/plain; charset=utf-8")
+        elif self.path in ("/vettori", "/vettori/") or self.path.startswith("/vettori/"):   # 12/10: vettori italiani (pagina_vettori.py)
+            nome = self.path[len("/vettori/"):].split("?")[0] if self.path.startswith("/vettori/") else ""
+            if self.path == "/vettori":
+                self.send_response(301); self.send_header("Location", "/vettori/"); self.end_headers(); return
+            f = os.path.realpath(os.path.join(VETTORI, nome or "index.html"))
+            if not f.startswith(VETTORI + "/") or not os.path.isfile(f):
+                self.send_error(404)
+                return
+            self._manda(open(f, "rb").read(), "application/json" if f.endswith(".json") else "text/html; charset=utf-8")
         elif self.path == "/emozioni":
             self.send_response(301)
             self.send_header("Location", "/emozioni/")

@@ -19,6 +19,7 @@ import time
 import urllib.request
 
 import numpy as np
+import torch
 
 os.environ.setdefault("PONTE_URL", "http://127.0.0.1:8099")
 import types  # noqa: E402
@@ -203,9 +204,14 @@ def basta(serie):
     return None
 
 
-def punto(testo_ctx, base, sb, e, layer, dose):
+# 12/10, decisione dell'autrice: vettori in ITALIANO, contrastivi sul dataset diaristico (5-vettori-italiani/emovec_it.py).
+# "en" = i vecchi (gradiente sulla parola inglese / contrastivi sui ricordi), solo per il confronto.
+IT = torch.load("/data/jspace/out-occamy/emovec-it.pt", weights_only=False)["vettori"]
+
+
+def punto(testo_ctx, base, sb, e, layer, dose, vettori="it"):
     """come T.punto ma su UN layer"""
-    fonte = T.ROSSI[e] if T.METODO[e] == "contrastivo" else T.GRAD[e]
+    fonte = IT[e] if vettori == "it" else T.ROSSI[e] if T.METODO[e] == "contrastivo" else T.GRAD[e]
     d = (fonte[layer].float() / fonte[layer].float().norm()).numpy()
     T.ponte._post("/control-vector", {"layers": {str(layer): (dose * T.SCALA * d).tolist()}, "relative": True})
     try:
@@ -222,5 +228,33 @@ def punto(testo_ctx, base, sb, e, layer, dose):
     return r
 
 
+def confronto():
+    """12/10, decisione dell'autrice: stesso contesto, stessa emozione, stesso layer e dose, vettore italiano contro inglese"""
+    EMO = ["joy", "sadness", "anger", "fear", "trust", "disgust", "surprise", "serenity"]
+    ctxs = contesti()
+    out = open(f"{D}/confronto-it-en.jsonl", "a")
+    prec = None
+    for x in ctxs:
+        if x["k"] not in (0, ctxs[-1]["k"]):   # i prefissi intermedi servono a costruire l'ultimo
+            prepara(x, prec)
+            prec = x
+            continue
+        print(f"== confronto, contesto {x['k']} ({x['n_token']} token)", flush=True)
+        T.ponte.calma()
+        prepara(x, prec)
+        prec = x
+        base = T.completa(x["testo"])
+        sb = T.stato(base)
+        out.write(json.dumps({"base": True, "k": x["k"], "testo": base}, ensure_ascii=False) + "\n")
+        for e in EMO:
+            for layer in (18, 24, 29):
+                for dose in (0.1, 0.2, 0.3, 0.4):
+                    for v in ("it", "en"):
+                        r = punto(x["testo"], base, sb, e, layer, dose, v)
+                        out.write(json.dumps(dict(r, k=x["k"], vettori=v, testo=r["testo"][:300]), ensure_ascii=False) + "\n")
+                        out.flush()
+            print(f"   {e} fatto", flush=True)
+
+
 if __name__ == "__main__":
-    main()
+    confronto() if sys.argv[1:] == ["confronto"] else main()
