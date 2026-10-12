@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emozioni per layer</title>
+<style>
+/* stile della dashboard (notturna-web.py); rampa sequenziale blu 100-700 per l'efficacia */
+:root{color-scheme:light;
+  --bg:#f4f3ef; --card:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
+  --bordo:#e6e5e0; --ok:#0b7a3a; --warn:#9a6200; --err:#c0362c; --accent:#2a78d6; --btn:#efeee9; --btn-bordo:#e6e5e0;
+  --vuoto:#efeee9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a;
+  --vuoto:#222220;
+}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a;
+  --vuoto:#222220;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 60px}
+header,main{max-width:1100px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;margin-bottom:14px}
+header h1{font-size:22px;font-weight:700}
+header .ora{color:var(--muted)}
+header .home{margin-left:auto;background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);border-radius:8px;padding:5px 12px;text-decoration:none;font-size:14px}
+header .home:hover{border-color:var(--accent)}
+section{background:var(--card);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+h2{font-size:16px;font-weight:600;margin-bottom:6px}
+.nota{font-size:12.5px;color:var(--ink2);margin-bottom:10px}
+.mappa{overflow-x:auto}
+.griglia{display:grid;grid-template-columns:120px repeat(18,minmax(0,1fr));gap:2px}
+.griglia .t{font-size:11.5px;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums}
+.griglia .n{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px;cursor:pointer}
+.griglia .c{height:16px;min-width:0;border-radius:3px;background:var(--vuoto);cursor:pointer;transition:opacity .12s}
+.griglia .c.best{outline:2px solid var(--ink);outline-offset:-2px}
+.griglia.fuoco .riga-off{opacity:.18}
+.griglia .n.on{color:var(--ink);font-weight:600}
+.legenda{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink2);margin-top:10px}
+.legenda .scala{display:flex;gap:2px}.legenda .scala i{width:22px;height:10px;border-radius:2px}
+.bottoni{display:flex;flex-wrap:wrap;gap:6px}
+button{background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);border-radius:8px;padding:5px 11px;font:inherit;font-size:13px;cursor:pointer}
+button:hover,button.on{border-color:var(--accent)}
+button small{color:var(--muted);font-variant-numeric:tabular-nums;margin-left:4px}
+.tema{background:none;border:1px solid var(--bordo);border-radius:50%;width:32px;height:32px;padding:0;color:var(--ink)}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--ink);border:1px solid var(--bordo);border-radius:8px;
+  padding:7px 10px;font-size:12px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none;z-index:9;max-width:260px}
+#scheda{display:none}
+table{border-collapse:collapse;font:12.5px/1.5 ui-monospace,monospace;font-variant-numeric:tabular-nums;width:100%}
+th{text-align:left;color:var(--muted);font-weight:500;padding:2px 8px 3px 0}
+td{padding:2px 8px 2px 0;color:var(--ink2)}
+tr.best td{color:var(--ink);font-weight:600}
+td.ef{color:var(--ok);font-weight:600} td.ro{color:var(--err)} td.pa{color:var(--warn)}
+.tabwrap{overflow-x:auto;margin-top:8px}
+@media (max-width:640px){
+  body{padding:14px 10px 40px}
+  section{padding:12px 10px}
+  .griglia{grid-template-columns:74px repeat(18,minmax(0,1fr));gap:1px}
+  .griglia .n{font-size:10.5px;padding-right:3px}
+  .griglia .t{font-size:8.5px}
+  .griglia .t:nth-child(odd){visibility:hidden}
+  .griglia .c{height:13px;border-radius:2px}
+  table{font-size:11px}
+  th,td{padding-right:5px}
+  button{padding:4px 8px;font-size:12px}
+}
+.conf{border-top:1px solid var(--bordo);padding:8px 0}
+.conf-t{font-size:12px;color:var(--muted);margin-bottom:4px}
+.conf-g{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;color:var(--ink2)}
+@media (max-width:640px){.conf-g{grid-template-columns:1fr}}
+.conf-k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.ef{color:var(--ok);font-weight:600}.ro{color:var(--err)}.pa{color:var(--warn)}.vuoto{color:var(--muted);font-style:italic}
+.grande{font-size:22px;font-weight:650}
+.grande small{font-size:13px;font-weight:400;color:var(--ink2);margin-left:6px}
+</style>
+<script>
+(function(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x})();
+</script>
+</head><body>
+<header><h1>🎭 Emozioni per layer</h1><span class="ora" id="stato">…</span><a class="home" href="/" title="Torna alla dashboard">🏠 Home</a></header>
+<main>
+<section>
+<h2>Efficacia di ogni emozione su ogni layer</h2>
+<p class="nota">Colore = quota dei contesti (da solo prompt di sistema fino a ~140k token, temi diversi) in cui almeno una dose
+porta l'emozione giusta fra le prime 3 delle 51, con testo pulito. Il riquadro marca il layer migliore. Passa sopra una cella per i dettagli.</p>
+<div class="mappa"><div class="griglia" id="griglia"></div></div>
+<div class="legenda">0%<span class="scala" id="scala"></span>100%<span style="margin-left:12px">grigio = non ancora misurato</span></div>
+</section>
+<section>
+<h2>Emozioni</h2>
+<p class="nota">Passa sopra per evidenziarla nel grafico, clicca per la scheda; clic fuori per chiuderla. Accanto: layer migliore ed efficacia.</p>
+<div class="bottoni" id="bottoni"></div>
+</section>
+<section id="scheda"></section>
+</main>
+<div id="tip"></div>
+<script>
+const RAMPA=["#cde2fb","#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"];
+const scuro=()=>{const d=document.documentElement.dataset.theme;return d?d==="dark":matchMedia("(prefers-color-scheme: dark)").matches};
+const colore=v=>{const r=scuro()?[...RAMPA].reverse():RAMPA;return r[Math.round(v*(r.length-1))]};
+const pc=v=>v==null?"–":Math.round(v*100)+"%";
+let D,ordine=[],aperta=null;
+const it=e=>(D&&D.it&&D.it[e])||e;
+const $=id=>document.getElementById(id), tip=$("tip");
+function mostraTip(ev,html){tip.innerHTML=html;tip.style.display="block";
+  const x=Math.min(ev.clientX+14,innerWidth-270),y=ev.clientY+14;tip.style.left=x+"px";tip.style.top=y+"px"}
+function nascondiTip(){tip.style.display="none"}
+function evidenzia(e){const g=$("griglia");g.classList.toggle("fuoco",!!e);
+  g.querySelectorAll("[data-e]").forEach(el=>{el.classList.toggle("riga-off",!!e&&el.dataset.e!==e);
+    if(el.classList.contains("n"))el.classList.toggle("on",el.dataset.e===e)})}
+function disegna(){
+  const g=$("griglia");g.innerHTML='<div></div>'+D.layer.map(L=>`<div class="t">L${L}</div>`).join("");
+  for(const e of ordine){const x=D.emozioni[e];
+    g.insertAdjacentHTML("beforeend",`<div class="n" data-e="${e}" title="${it(e)}">${it(e)}</div>`);
+    for(const L of D.layer){const v=x.layer[L];
+      const st=v?`background:${colore(v.efficacia)}`:"";
+      g.insertAdjacentHTML("beforeend",`<div class="c${+L===x.migliore?" best":""}" data-e="${e}" data-l="${L}" style="${st}"></div>`)}}
+  g.querySelectorAll(".c").forEach(c=>{
+    c.onmousemove=ev=>{const v=D.emozioni[c.dataset.e].layer[c.dataset.l];
+      mostraTip(ev,`<b>${it(c.dataset.e)}</b> · L${c.dataset.l}<br>`+(v?`efficacia ${pc(v.efficacia)} su ${v.n_contesti} contesti<br>intensità ${v.dose??"–"}${v.dev!=null?" ± "+v.dev:""}<br>range efficace ${v.da??"–"}–${v.a??"–"}<br>testo rotto da ${v.rotto_da??"–"}`:"non ancora misurato"))};
+    c.onmouseleave=nascondiTip;c.onclick=()=>apri(c.dataset.e)});
+  g.querySelectorAll(".n").forEach(n=>{n.onclick=()=>apri(n.dataset.e)});
+  $("scala").innerHTML=[0,.25,.5,.75,1].map(v=>`<i style="background:${colore(v)}"></i>`).join("");
+  $("bottoni").innerHTML=ordine.map(e=>{const x=D.emozioni[e],b=x.layer[x.migliore];
+    return `<button data-e="${e}">${it(e)}<small>L${x.migliore} ${pc(b.efficacia)}</small></button>`}).join("");
+  $("bottoni").querySelectorAll("button").forEach(b=>{b.onmouseenter=()=>evidenzia(b.dataset.e);
+    b.onmouseleave=()=>evidenzia(aperta);b.onclick=()=>apri(b.dataset.e)});
+  evidenzia(aperta)}
+function cella(c){if(!c)return '<td>·</td>';
+  const cls=c.efficace?"ef":c.rotto?"ro":c.parola?"pa":"";
+  const t=c.rotto?"rotto":!c.cambiato?"=":(c.rango??"–")+(c.parola?" P":"");
+  return `<td class="${cls}" title="${(c.testo||"").replace(/"/g,"&quot;")}">${t}</td>`}
+function chiudi(){aperta=null;$("scheda").style.display="none";
+  document.querySelectorAll("#bottoni button").forEach(t=>t.classList.remove("on"));evidenzia(null)}
+document.addEventListener("click",ev=>{if(!aperta)return;
+  if(ev.target.closest("#bottoni button, .griglia .c, .griglia .n, #scheda"))return;chiudi()});
+function apri(e){aperta=e;const x=D.emozioni[e],Lb=x.migliore,b=x.layer[Lb];
+  document.querySelectorAll("#bottoni button").forEach(t=>t.classList.toggle("on",t.dataset.e===e));evidenzia(e);
+  const righe=Object.entries(x.layer).map(([L,v])=>`<tr class="${+L===Lb?"best":""}"><td>L${L}</td><td>${pc(v.efficacia)}</td><td>${v.dose??"–"}</td><td>${v.dev??"–"}</td><td>${v.da??"–"}–${v.a??"–"}</td><td>${v.eco??"–"}</td><td>${v.rotto_da??"–"}</td></tr>`).join("");
+  let fin="";
+  if(x.finestra.length&&b.dose!=null){const dosi=[...Array(11)].map((_,i)=>(b.dose+0.02*(i-5)).toFixed(2));
+    fin=`<h2 style="margin-top:16px">L${Lb}: intensità ${b.dose} ± 0.10, contesto per contesto</h2>
+    <p class="nota">Rango della faccia giusta fra le 51 (1 = la più forte). Verde = efficace, arancio P = parola dell'emozione nel testo, rosso = testo rotto, "=" = testo uguale alla base. Passa sopra per leggere il testo.</p>
+    <div class="tabwrap"><table><tr><th>token</th>${dosi.map(d=>`<th>${d}</th>`).join("")}</tr>
+    ${x.finestra.map(f=>`<tr><td>${f.n_token.toLocaleString("it")}</td>${f.celle.map(cella).join("")}</tr>`).join("")}</table></div>`}
+  const esc=t=>(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  if(x.confronto&&x.confronto.length){
+    fin+=`<h2 style="margin-top:16px">Con e senza vettore, per lunghezza di contesto</h2>
+    <p class="nota">L${Lb} all'intensità ${b.dose} (o l'ultima dose misurata sotto, se la serie si è fermata prima). Inizio della risposta dell'agente, 64 token.</p>
+    ${x.confronto.map(c=>`<div class="conf"><div class="conf-t">${c.n_token.toLocaleString("it")} token · dose ${c.dose} · ${c.rotto?'<span class="ro">rotto</span>':c.parola?'<span class="pa">parola</span>':c.efficace?'<span class="ef">efficace</span>':"rango "+(c.rango??"–")}</div>
+      <div class="conf-g"><div><div class="conf-k">senza</div>${c.senza?esc(c.senza):'<span class="vuoto">base non registrata</span>'}</div><div><div class="conf-k">con</div>${esc(c.con)}</div></div></div>`).join("")}`}
+  $("scheda").style.display="block";
+  $("scheda").innerHTML=`<h2>${it(e)}</h2><div class="grande">L${Lb}<small>efficace in ${pc(b.efficacia)} dei contesti · intensità ${b.dose??"–"}${b.dev!=null?" (dev. std "+b.dev+")":""} · range ${b.da??"–"}–${b.a??"–"}</small></div>
+  <div class="tabwrap"><table><tr><th>layer</th><th>efficacia</th><th>intensità</th><th>dev. std</th><th>range efficace</th><th>eco</th><th>rotto da</th></tr>${righe}</table></div>${fin}`;
+  $("scheda").scrollIntoView({behavior:"smooth",block:"start"})}
+fetch("dati.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{D=d;
+  const sc=e=>{const x=D.emozioni[e],b=x.layer[x.migliore];return b.efficacia*10+(b.eco||0)};
+  ordine=Object.keys(D.emozioni).sort((a,b)=>sc(b)-sc(a));
+  const n=Object.keys(D.emozioni).length;
+  $("stato").textContent=`${n}/51 emozioni · ${D.contesti.length} contesti fino a ${Math.max(...D.contesti.map(c=>c.n_token)).toLocaleString("it")} token`;
+  disegna();matchMedia("(prefers-color-scheme: dark)").addEventListener("change",disegna)})
+ .catch(()=>{$("stato").textContent="dati non ancora disponibili"});
+</script>
+</body></html>

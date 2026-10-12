@@ -1,0 +1,13 @@
+[Unit]
+Description=Lux degli engrammi: consegna dei ricordi al riflesso (127.0.0.1:8132)
+After=network.target embedder-sem.service
+Wants=embedder-sem.service
+
+[Service]
+WorkingDirectory=/data/memoria-episodica-affettiva/engrammi
+ExecStart=/data/venv-spacy/bin/python servizio_lux.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

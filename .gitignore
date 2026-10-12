@@ -19,3 +19,16 @@ adapter/
 griglie/
 __pycache__/
 *.bak*
+# Lux degli engrammi e prove contesto lungo: uscite e dati, MAI nel repo
+engrammi/lux-*/
+engrammi/stati/
+engrammi/misura*.json
+research/long-context/dati/*.json
+research/long-context/**/risultati-*.json
+research/long-context/**/log-*.txt
+research/long-context/4-steering-per-layer/slot/
+research/long-context/4-steering-per-layer/emozioni-layer/
+research/long-context/4-steering-per-layer/contesti-layer.json
+research/long-context/3-taratura/taratura-emozioni*.json
+research/long-context/5-vettori-italiani/indice-diario.json
+research/long-context/5-vettori-italiani/fatti.txt

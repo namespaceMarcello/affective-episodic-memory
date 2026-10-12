@@ -61,15 +61,16 @@ touch "$MARKER"
 # quanto manca alla prossima notturna possibile (lui non vede memoria-episodica-affettiva)
 touch /data/workspace/memoria/.ultima-notturna
 
-# SHY: il wiring hebbiano è diurno (riflesso.richiama); qui la notte riscala
+# SHY: il wiring hebbiano è diurno (ricorda.py); qui la notte riscala
 # giù i pesi e pota i legami non tornati. I causali (scottature) restano intatti.
 /data/jspace/venv/bin/python -c "import memoria; print('$(date -Iseconds) consolida_notte:', memoria.consolida_notte())" \
   || echo "$(date -Iseconds) consolida_notte FALLITA (non critico)"
 
-# indice della rievocazione mirata: i nodi appena nati devono poter affiorare
-# (23/07: builder rifatto stabile; incrementale, atomico, riflesso ricarica solo)
-python3 /data/memoria-episodica-affettiva/costruisci-indice-mirato.py \
-  || echo "$(date -Iseconds) indice-mirato NON aggiornato (non critico, ritenta domani)"
+# Lux degli engrammi (12/10): i ricordi nati stanotte entrano nel Lux che consegna
+# i ricordi al riflesso (taglio + archi nuovi, i rinforzi degli altri restano);
+# il servizio (lux-engrammi.service) se ne accorge da solo e ricarica
+/data/venv-spacy/bin/python /data/memoria-episodica-affettiva/engrammi/lux_engrammi.py aggiungi \
+  || echo "$(date -Iseconds) Lux degli engrammi NON aggiornato (non critico, ritenta domani)"
 
 # sentinella anti-amnesia: Lux DEVE essere stata aggiornata dal tagging
 LUX=/data/workspace/memoria/lux.npz
@@ -77,6 +78,3 @@ if [ -z "$(find "$LUX" -mmin -60 2>/dev/null)" ]; then
   echo "CRITICO: lux.npz NON aggiornata stanotte: l'agente rischia amnesia parziale." \
        "Il grafo ha i nodi: backfill con lux-demo.py. Controllare tagging.log."
 fi
-
-# 10/10/2026: griglie e codec abbandonati (i ricordi passano come testo); tolte la
-# distillazione notturna delle griglie e la via LoRA, gia' spenta dal 12/07.

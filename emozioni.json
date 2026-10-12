@@ -1,0 +1,359 @@
+[
+ {
+  "en": "ecstasy",
+  "it": "estasi",
+  "tag": "EST",
+  "emoji": "🤩",
+  "colore": "#ffd94d"
+ },
+ {
+  "en": "joy",
+  "it": "gioia",
+  "tag": "GIO",
+  "emoji": "😄",
+  "colore": "#f5c518"
+ },
+ {
+  "en": "serenity",
+  "it": "serenità",
+  "tag": "SER",
+  "emoji": "😌",
+  "colore": "#f7e08b"
+ },
+ {
+  "en": "delight",
+  "it": "diletto",
+  "tag": "DIL",
+  "emoji": "😁",
+  "colore": "#f2b632"
+ },
+ {
+  "en": "triumph",
+  "it": "trionfo",
+  "tag": "TRF",
+  "emoji": "🏆",
+  "colore": "#fbbf24"
+ },
+ {
+  "en": "pride",
+  "it": "orgoglio",
+  "tag": "ORG",
+  "emoji": "😎",
+  "colore": "#e879a9"
+ },
+ {
+  "en": "admiration",
+  "it": "ammirazione",
+  "tag": "AMM",
+  "emoji": "😍",
+  "colore": "#10b981"
+ },
+ {
+  "en": "trust",
+  "it": "fiducia",
+  "tag": "FID",
+  "emoji": "🤝",
+  "colore": "#34d399"
+ },
+ {
+  "en": "acceptance",
+  "it": "accettazione",
+  "tag": "ACC",
+  "emoji": "🙂",
+  "colore": "#6ee7b7"
+ },
+ {
+  "en": "love",
+  "it": "amore",
+  "tag": "AMO",
+  "emoji": "❤️",
+  "colore": "#a3e635"
+ },
+ {
+  "en": "sentimentality",
+  "it": "tenerezza",
+  "tag": "TEN",
+  "emoji": "🥰",
+  "colore": "#f9a8d4"
+ },
+ {
+  "en": "terror",
+  "it": "terrore",
+  "tag": "TER",
+  "emoji": "😱",
+  "colore": "#115e59"
+ },
+ {
+  "en": "fear",
+  "it": "paura",
+  "tag": "PAU",
+  "emoji": "😨",
+  "colore": "#0d9488"
+ },
+ {
+  "en": "apprehension",
+  "it": "apprensione",
+  "tag": "APP",
+  "emoji": "😟",
+  "colore": "#2dd4bf"
+ },
+ {
+  "en": "anxiety",
+  "it": "ansia",
+  "tag": "ANS",
+  "emoji": "😰",
+  "colore": "#14b8a6"
+ },
+ {
+  "en": "submission",
+  "it": "sottomissione",
+  "tag": "SOT",
+  "emoji": "🙇",
+  "colore": "#5eead4"
+ },
+ {
+  "en": "awe",
+  "it": "soggezione",
+  "tag": "SOG",
+  "emoji": "😮",
+  "colore": "#60a5fa"
+ },
+ {
+  "en": "amazement",
+  "it": "stupore",
+  "tag": "STU",
+  "emoji": "😲",
+  "colore": "#7dd3fc"
+ },
+ {
+  "en": "surprise",
+  "it": "sorpresa",
+  "tag": "SOR",
+  "emoji": "😯",
+  "colore": "#38bdf8"
+ },
+ {
+  "en": "distraction",
+  "it": "distrazione",
+  "tag": "DST",
+  "emoji": "😳",
+  "colore": "#bae6fd"
+ },
+ {
+  "en": "shock",
+  "it": "sgomento",
+  "tag": "SGO",
+  "emoji": "😵",
+  "colore": "#e0f2fe"
+ },
+ {
+  "en": "grief",
+  "it": "cordoglio",
+  "tag": "COR",
+  "emoji": "😭",
+  "colore": "#1d4ed8"
+ },
+ {
+  "en": "sadness",
+  "it": "tristezza",
+  "tag": "TRI",
+  "emoji": "😢",
+  "colore": "#3b82f6"
+ },
+ {
+  "en": "pensiveness",
+  "it": "malinconia",
+  "tag": "MAL",
+  "emoji": "😔",
+  "colore": "#93b4f6"
+ },
+ {
+  "en": "despair",
+  "it": "disperazione",
+  "tag": "DPE",
+  "emoji": "😩",
+  "colore": "#1e3a8a"
+ },
+ {
+  "en": "remorse",
+  "it": "rimorso",
+  "tag": "RIM",
+  "emoji": "😞",
+  "colore": "#64748b"
+ },
+ {
+  "en": "guilt",
+  "it": "colpa",
+  "tag": "CLP",
+  "emoji": "😓",
+  "colore": "#7c8aa5"
+ },
+ {
+  "en": "shame",
+  "it": "vergogna",
+  "tag": "VER",
+  "emoji": "😳",
+  "colore": "#8b8fa8"
+ },
+ {
+  "en": "disapproval",
+  "it": "disapprovazione",
+  "tag": "DAP",
+  "emoji": "🙅",
+  "colore": "#f472b6"
+ },
+ {
+  "en": "loathing",
+  "it": "ribrezzo",
+  "tag": "RIB",
+  "emoji": "🤮",
+  "colore": "#7e22ce"
+ },
+ {
+  "en": "disgust",
+  "it": "disgusto",
+  "tag": "DSG",
+  "emoji": "🤢",
+  "colore": "#a855f7"
+ },
+ {
+  "en": "boredom",
+  "it": "noia",
+  "tag": "NOI",
+  "emoji": "😑",
+  "colore": "#9ca3af"
+ },
+ {
+  "en": "contempt",
+  "it": "disprezzo",
+  "tag": "DPZ",
+  "emoji": "😒",
+  "colore": "#c084fc"
+ },
+ {
+  "en": "morbidness",
+  "it": "morbosità",
+  "tag": "MOR",
+  "emoji": "🕸️",
+  "colore": "#6b21a8"
+ },
+ {
+  "en": "rage",
+  "it": "furia",
+  "tag": "FUR",
+  "emoji": "🤬",
+  "colore": "#b91c1c"
+ },
+ {
+  "en": "anger",
+  "it": "rabbia",
+  "tag": "RAB",
+  "emoji": "😠",
+  "colore": "#ef4444"
+ },
+ {
+  "en": "annoyance",
+  "it": "fastidio",
+  "tag": "FAS",
+  "emoji": "😤",
+  "colore": "#fb923c"
+ },
+ {
+  "en": "aggressiveness",
+  "it": "aggressività",
+  "tag": "AGG",
+  "emoji": "😡",
+  "colore": "#f87171"
+ },
+ {
+  "en": "outrage",
+  "it": "indignazione",
+  "tag": "IND",
+  "emoji": "😾",
+  "colore": "#dc2626"
+ },
+ {
+  "en": "dominance",
+  "it": "dominanza",
+  "tag": "DOM",
+  "emoji": "👑",
+  "colore": "#9f1239"
+ },
+ {
+  "en": "envy",
+  "it": "invidia",
+  "tag": "INV",
+  "emoji": "😖",
+  "colore": "#84cc16"
+ },
+ {
+  "en": "jealousy",
+  "it": "gelosia",
+  "tag": "GEL",
+  "emoji": "💚",
+  "colore": "#4d7c0f"
+ },
+ {
+  "en": "cynicism",
+  "it": "cinismo",
+  "tag": "CIN",
+  "emoji": "🙄",
+  "colore": "#a1a1aa"
+ },
+ {
+  "en": "vigilance",
+  "it": "vigilanza",
+  "tag": "VIG",
+  "emoji": "🧐",
+  "colore": "#f59e0b"
+ },
+ {
+  "en": "anticipation",
+  "it": "attesa",
+  "tag": "ATT",
+  "emoji": "👀",
+  "colore": "#fb923c"
+ },
+ {
+  "en": "interest",
+  "it": "interesse",
+  "tag": "INT",
+  "emoji": "🤔",
+  "colore": "#22d3ee"
+ },
+ {
+  "en": "curiosity",
+  "it": "curiosità",
+  "tag": "CUR",
+  "emoji": "🔍",
+  "colore": "#06b6d4"
+ },
+ {
+  "en": "optimism",
+  "it": "ottimismo",
+  "tag": "OTT",
+  "emoji": "🌈",
+  "colore": "#f59e0b"
+ },
+ {
+  "en": "hope",
+  "it": "speranza",
+  "tag": "SPE",
+  "emoji": "🌱",
+  "colore": "#fdba74"
+ },
+ {
+  "en": "pessimism",
+  "it": "pessimismo",
+  "tag": "PES",
+  "emoji": "🌧️",
+  "colore": "#6b7a8f"
+ },
+ {
+  "en": "purification",
+  "it": "purificazione",
+  "tag": "PUR",
+  "emoji": "🕊️",
+  "colore": "#cffafe"
+ }
+]

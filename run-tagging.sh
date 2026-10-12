@@ -18,7 +18,10 @@ if curl -sf --max-time 2 http://127.0.0.1:8090/health >/dev/null 2>&1; then
   systemctl --user start llama-35b.service voce-watcher.service
   exit 1
 fi
+# 30/09: il tagger legge con lo stesso modello e gli stessi artefatti della produzione
+# (Occamy dal 29/09); senza, mixed35b ripiegava sul Qwen e sulla lente di out-35b
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HOME=/data/jspace/hf \
+  MODELLO_35B=Accio-Lab/occamy-1.0 OUT_35B=/data/jspace/out-occamy \
   /data/jspace/venv/bin/python /data/memoria-episodica-affettiva/tagging35b.py "$1" \
   > /data/memoria-episodica-affettiva/tagging.log 2>&1
 RC=$?

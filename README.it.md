@@ -284,6 +284,12 @@ Tutto gira in locale, su un solo PC: nessuna API esterna, nessun dato che lascia
 
 EAR converte l'audio in una griglia per il canale visivo del modello, come fa il codec dei ricordi con il testo, e in parallelo sceglie l'emozione da iniettare come vettore di steering. La trascrizione di Qwen3-ASR entra nel codec come testo; quattro modelli audio congelati (CLAP, MERT, Dasheng, emotion2vec) sono collegati con ponti addestrati a una copia del codec dei ricordi con 5 ingressi. La stessa trascrizione cerca i ricordi da richiamare. Architettura, fasi di addestramento e stato: [EAR-PLAN.it.md](EAR-PLAN.it.md).
 
+## Il Lux degli engrammi (in corso)
+
+Un secondo Lux, in [`engrammi/`](engrammi/), conserva i ricordi come indici su engrammi condivisi invece che come vettori interi. Ogni ricordo viene tagliato con regole linguistiche deterministiche (analisi delle dipendenze di spaCy, `taglia.py`) in engrammi, pezzi brevi come un soggetto o un verbo coi suoi complementi, e lo stesso engramma è condiviso da tutti i ricordi che lo contengono. I pezzi sono uniti da archi hebbiani che appartengono a un ricordo e portano parametri: le preposizioni diventano simboli, gli articoli numeri, punteggiatura e congiunzioni modificatori. Un ricordo esiste solo attraverso i suoi archi: il richiamo lo ricompone percorrendoli in ordine. Il richiamo lavora sull'indice del ricordo per via testuale (stesso engramma) e semantica (vettori bge-m3), pesando quanto è raro ogni engramma, e sotto una soglia tarata non consegna niente; ogni richiamo riuscito rinforza gli archi del ricordo con la stessa curva di stabilità distanziata del Lux originale, e gli archi mai richiamati sbiadiscono. Il riflesso riceve al massimo un ricordo per messaggio, come risultato del tool `memorinvolontaria`. Un visore 3D di engrammi e archi è in `engrammi/lux3d.py`. Ancora in progettazione: correggere un ricordo senza cancellarlo, con archi negati che sbiadiscono e archi di correzione, sul modello di estinzione e riconsolidamento.
+
+La procedura di test dello steering emotivo per layer, con contesti fino a ~140k token, è in [`research/long-context/`](research/long-context/).
+
 ## Sviluppi futuri
 
 Due sviluppi sul tavolo, entrambi costruiti sullo stesso canale visivo che il

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lux __VERSIONE__ in 3D</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#0b0e1a;color:#dbe2f0;font:14px/1.45 system-ui,sans-serif;overflow:hidden}
+#hud{position:fixed;left:12px;top:10px;color:#8ea0c9;font-size:12px;user-select:none;pointer-events:none}
+#hud b{color:#dbe2f0;font-size:14px}
+#cerca{position:fixed;right:14px;top:12px;width:300px}
+#cerca input{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid #2c3760;background:#121729;color:#dbe2f0;font-size:14px}
+#esiti{margin-top:6px;max-height:60vh;overflow-y:auto;font-size:12px}
+#esiti div{padding:3px 8px;border-radius:6px;cursor:pointer;color:#c9d4ee}
+#esiti div:hover{background:#1c2440}
+#pop{position:fixed;display:none;max-width:380px;max-height:50vh;overflow-y:auto;background:#121729f2;border:1px solid #2c3760;border-radius:10px;padding:10px 12px;font-size:13px;box-shadow:0 8px 30px #0008}
+#pop h3{margin:0 0 6px;font-size:14px}
+#pop .m{color:#8ea0c9;font-size:12px}
+#pop .t{background:#0d1120;border:1px solid #232c4a;border-radius:6px;padding:6px 8px;margin:6px 0;white-space:pre-wrap}
+#ricordo{position:fixed;left:12px;bottom:12px;width:460px;max-height:45vh;overflow-y:auto;display:none;background:#121729f2;border:1px solid #2c3760;border-radius:10px;padding:10px 12px;font-size:13px}
+#ricordo .x{float:right;cursor:pointer;color:#8ea0c9}
+#ricordo .t{white-space:pre-wrap;margin-top:6px}
+#ricordo .alt{margin-top:8px;font-size:12px;color:#8ea0c9}
+#ricordo .alt span{cursor:pointer;text-decoration:underline;margin-right:10px}
+#pop .rl{cursor:pointer;text-decoration:underline}
+#leg{position:fixed;left:12px;top:96px;background:#121729e6;border:1px solid #2c3760;border-radius:10px;padding:8px 10px;font-size:12px;color:#c9d4ee;max-width:230px}
+#leg summary{cursor:pointer;color:#8ea0c9}
+#leg .r{display:flex;align-items:center;gap:6px;margin:2px 0}
+#leg .s{width:22px;height:3px;border-radius:2px;flex:none}
+#leg .h{color:#8ea0c9;margin-top:6px}
+@media (max-width:640px){#cerca{width:calc(100vw - 24px);left:12px;right:auto;top:auto;bottom:12px}#hud{display:none}#leg{top:10px;bottom:auto}#ricordo{width:calc(100vw - 48px)}}
+#carica{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#8ea0c9}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head><body>
+<div id="carica">carico il Lux…</div>
+<div id="hud"><b>Lux __VERSIONE__</b><br>trascina = ruota · tasto destro = sposta · rotella = zoom<br>clic su una pallina = engramma e onda sui suoi archi · clic su un circoletto = arco · clic su un numero di ricordo = il ricordo<br><span id="stat"></span></div>
+<div id="cerca"><input id="q" placeholder="cerca una parola…" autocomplete="off">
+<input id="rq" placeholder="richiama: scrivi una frase e premi invio" autocomplete="off" style="margin-top:6px"><div id="esiti"></div></div>
+<div id="ricordo"><span class="x" id="rx">✕</span><b id="rt"></b><div class="t" id="rtesto"></div><div class="alt" id="ralt"></div></div>
+<div id="pop"></div>
+<details id="leg"><summary>legenda archi</summary><div id="legc"></div></details>
+<script type="module">
+import * as THREE from 'three';
+import {TrackballControls} from 'three/addons/controls/TrackballControls.js';
+
+const D = await (await fetch('dati.json')).json();
+const SOGLIA = __SOGLIA__;
+document.getElementById('carica').remove();
+const N = D.testi.length, A = D.archi;
+document.getElementById('stat').textContent = N + ' engrammi · ' + A.length + ' archi';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 1, 5000);
+camera.position.set(0, 0, 520);
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls = new TrackballControls(camera, renderer.domElement);   // 12/10: rotazione libera sui 3 assi (Orbit ne dava 2)
+controls.rotateSpeed = 3; controls.zoomSpeed = 1.2; controls.panSpeed = 0.8;
+controls.staticMoving = false; controls.dynamicDampingFactor = 0.15;
+
+function sprite(anello) {   // pallina piena o circoletto vuoto
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'); g.beginPath(); g.arc(32, 32, 26, 0, 7);
+  if (anello) { g.lineWidth = 8; g.strokeStyle = '#fff'; g.stroke(); } else { g.fillStyle = '#fff'; g.fill(); }
+  return new THREE.CanvasTexture(c);
+}
+const colore = i => new THREE.Color(D.col[D.emo[i]] || '#8ea0c9');
+
+// neuroni
+const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+D.pos.forEach((p, i) => { pos.set(p, i * 3); colore(i).toArray(col, i * 3); });
+const gN = new THREE.BufferGeometry();
+gN.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+gN.setAttribute('color', new THREE.BufferAttribute(col, 3));
+const neuroni = new THREE.Points(gN, new THREE.PointsMaterial({size: 4, vertexColors: true, map: sprite(false), alphaTest: 0.5, sizeAttenuation: true}));
+scene.add(neuroni);
+
+// archi e circoletti al centro
+const lp = new Float32Array(A.length * 6), lc = new Float32Array(A.length * 6), mp = new Float32Array(A.length * 3);
+A.forEach(([a, b], k) => {
+  lp.set(D.pos[a], k * 6); lp.set(D.pos[b], k * 6 + 3);
+  for (let d = 0; d < 3; d++) mp[k * 3 + d] = (D.pos[a][d] + D.pos[b][d]) / 2;
+});
+const BASE = [0.36, 0.43, 0.62];
+for (let k = 0; k < A.length * 2; k++) lc.set(BASE, k * 3);
+const gL = new THREE.BufferGeometry();
+gL.setAttribute('position', new THREE.BufferAttribute(lp, 3));
+gL.setAttribute('color', new THREE.BufferAttribute(lc, 3));
+const archi = new THREE.LineSegments(gL, new THREE.LineBasicMaterial({vertexColors: true, transparent: true, opacity: 0.18}));
+scene.add(archi);
+const gM = new THREE.BufferGeometry();
+gM.setAttribute('position', new THREE.BufferAttribute(mp, 3));
+const centri = new THREE.Points(gM, new THREE.PointsMaterial({size: 2, color: 0x9fb0d8, map: sprite(true), transparent: true, opacity: 0.55, alphaTest: 0.3, sizeAttenuation: true}));
+scene.add(centri);
+
+// evidenziati dalla ricerca: livello sopra, piu' grandi e luminosi
+const gH = new THREE.BufferGeometry(), gHL = new THREE.BufferGeometry();
+const evid = new THREE.Points(gH, new THREE.PointsMaterial({size: 9, color: 0xffffff, map: sprite(false), alphaTest: 0.5}));
+const evidArchi = new THREE.LineSegments(gHL, new THREE.LineBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.9}));
+evid.frustumCulled = evidArchi.frustumCulled = false;
+scene.add(evid, evidArchi);
+
+const archiDi = Array.from({length: N}, () => []);
+A.forEach(([a, b], k) => { archiDi[a].push(k); archiDi[b].push(k); });
+// ONDE LUMINOSE sugli archi (12/10): colore = preposizione (articolata = piu' chiara), luminosita' = forza
+// hebbiana dell'arco (facilita', relativa all'arco piu' forte; finche' nessun arco e' rinforzato sono tutti uguali). Onda che si irradia dall'engramma, poi
+// gli archi restano accesi; allo spegnimento un'onda scura parte dallo stesso punto.
+const PREP = {'∈': ['di', '#4ea8ff'], '→': ['a', '#ff6b6b'], '←': ['da', '#ffb347'], '⊂': ['in', '#5fd38d'], '∧': ['con', '#c77dff'],
+  '⊤': ['su', '#ffe066'], '⇒': ['per', '#3ee0d0'], '↔': ['tra / fra', '#ff7bd0'], '≈': ['come', '#b8f35c']};
+const NESSUNA = '#c9d4ee';
+const FMAX = Math.max(...A.map(x => x[5]));
+const STILE = A.map(x => {
+  const p = [...x[4].matchAll(/\{([^}]*)\}/g)].map(m => m[1]);
+  const prep = p.find(s => PREP[s[0]]);
+  const c = new THREE.Color(prep ? PREP[prep[0]][1] : NESSUNA);
+  if (prep && prep.length > 1) c.lerp(new THREE.Color('#ffffff'), 0.35);
+  return [c, x[5] / FMAX];
+});
+document.getElementById('legc').innerHTML = '<div class="h">colore = preposizione</div>' +
+  Object.entries(PREP).map(([s, [n, c]]) => `<div class="r"><span class="s" style="background:${c}"></span>${s} ${n}</div>`).join('') +
+  `<div class="r"><span class="s" style="background:${NESSUNA}"></span>nessuna preposizione</div><div class="h">articolata = tinta più chiara</div>` +
+  `<div class="h">luminosità = forza hebbiana (massima ${FMAX})</div>`;
+const VEL = 160, LARGA = 14;   // velocita' dell'onda (unita'/s) e larghezza del fronte
+const onde = new Set();
+const ondaMat = () => new THREE.ShaderMaterial({uniforms: {uOn: {value: 0}, uOff: {value: -1}},
+  vertexShader: `attribute float d; attribute float lum; attribute vec3 col; varying float vD; varying float vL; varying vec3 vC;
+    void main() { vD = d; vL = lum; vC = col; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform float uOn; uniform float uOff; varying float vD; varying float vL; varying vec3 vC;
+    void main() {
+      float f = uOn * ${VEL.toFixed(1)};
+      if (vD > f) discard;
+      if (uOff >= 0.0 && vD < uOff * ${VEL.toFixed(1)}) discard;
+      float I = vL * (1.3 + 3.0 * exp(-pow((f - vD) / ${LARGA.toFixed(1)}, 2.0)));
+      gl_FragColor = vec4(vC * I, min(I, 1.0));
+    }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending});
+function onda(segs) {   // segs: [partenza, arrivo, colore, luminosita']; l'onda corre da partenza ad arrivo
+  if (!segs.length) return null;
+  const n = segs.length, pos = new Float32Array(n * 6), dd = new Float32Array(n * 2), cc = new Float32Array(n * 6), ll = new Float32Array(n * 2);
+  let max = 0;
+  segs.forEach(([p, q, c, l], k) => {
+    pos.set(p, k * 6); pos.set(q, k * 6 + 3);
+    dd[k * 2 + 1] = Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]); max = Math.max(max, dd[k * 2 + 1]);
+    c.toArray(cc, k * 6); c.toArray(cc, k * 6 + 3); ll[k * 2] = ll[k * 2 + 1] = l;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('d', new THREE.BufferAttribute(dd, 1));
+  g.setAttribute('col', new THREE.BufferAttribute(cc, 3)); g.setAttribute('lum', new THREE.BufferAttribute(ll, 1));
+  const o = new THREE.LineSegments(g, ondaMat());
+  o.frustumCulled = false; o.renderOrder = 2;
+  o.userData = {t0: performance.now(), toff: null, max};
+  scene.add(o); onde.add(o); return o;
+}
+function spegni(o) { if (o && o.userData.toff == null) o.userData.toff = performance.now(); }
+function animaOnde(now) {
+  for (const o of onde) {
+    const u = o.material.uniforms; u.uOn.value = (now - o.userData.t0) / 1000;
+    if (o.userData.toff == null) continue;
+    u.uOff.value = (now - o.userData.toff) / 1000;
+    if (u.uOff.value * VEL > o.userData.max + LARGA) { scene.remove(o); o.geometry.dispose(); o.material.dispose(); onde.delete(o); }
+  }
+}
+// engramma selezionato: onda centrifuga sui suoi archi
+let evidIdx = [];
+let scelto = null, ondaScelto = null, ondaCerca = null;
+const gS = new THREE.BufferGeometry();
+const puntoScelto = new THREE.Points(gS, new THREE.PointsMaterial({size: 12, color: 0xffffff, map: sprite(false), alphaTest: 0.5}));
+puntoScelto.frustumCulled = false; scene.add(puntoScelto);
+function seleziona(i) {
+  spegni(ondaScelto); ondaScelto = null;
+  scelto = (i == null || i === scelto) ? null : i;
+  gS.setAttribute('position', new THREE.BufferAttribute(new Float32Array(scelto == null ? [] : D.pos[scelto]), 3));
+  gS.computeBoundingSphere();
+  if (scelto != null)
+    ondaScelto = onda(archiDi[scelto].map(k => { const [a, b] = A[k]; return [D.pos[scelto], D.pos[a === scelto ? b : a], ...STILE[k]]; }));
+  opacitaBase();
+  return scelto;
+}
+function opacitaBase() { archi.material.opacity = (scelto != null || evidIdx.length) ? 0.05 : 0.18; }
+
+// popup: si apre al clic, si chiude quando il mouse esce
+const pop = document.getElementById('pop');
+pop.addEventListener('mouseleave', () => pop.style.display = 'none');
+const esc = s => s.replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+function apri(html, x, y) {
+  pop.innerHTML = html; pop.style.display = 'block';
+  pop.style.left = Math.min(x - 10, innerWidth - pop.offsetWidth - 8) + 'px';
+  pop.style.top = Math.min(y - 10, innerHeight - pop.offsetHeight - 8) + 'px';
+}
+function popNeurone(i, x, y) {
+  const r = D.ricordi[i];
+  apri(`<h3 style="color:${D.col[D.emo[i]] || '#8ea0c9'}">engramma ${i}</h3><div class="t">${esc(D.testi[i])}</div>
+    <div class="m">emozione: ${D.emo[i] || '—'} · archi: ${archiDi[i].length} · ricordi: ${r.length}</div>
+    <div class="m">${r.slice(0, 40).map(n => `<span class="rl" data-r="${n}">${n}</span>`).join(', ')}${r.length > 40 ? '…' : ''}</div>`, x, y);
+}
+function popArco(k, x, y) {
+  const [a, b, r, p, par, f] = A[k];
+  apri(`<h3>arco hebbiano</h3><div class="m">ricordo ${r} · posizione ${p} · forza ${f}</div>
+    <div class="t">[${esc(D.testi[a])}]${esc(par)}[${esc(D.testi[b])}]</div>
+    <div class="m">parametri: ${par ? esc(par) : 'nessuno'}</div>`, x, y);
+}
+
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let giu = null;
+renderer.domElement.addEventListener('pointerdown', e => giu = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!giu || Math.hypot(e.clientX - giu[0], e.clientY - giu[1]) > 4) return;
+  mouse.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  ray.params.Points.threshold = camera.position.distanceTo(controls.target) / 260;
+  const hit = ray.intersectObjects([puntoScelto, evid, neuroni, centri]).sort((p, q) => p.distanceToRay - q.distanceToRay)[0];
+  if (!hit) { pop.style.display = 'none'; seleziona(null); return; }
+  if (hit.object === centri) { popArco(hit.index, e.clientX, e.clientY); return; }
+  const i = hit.object === evid ? evidIdx[hit.index] : hit.object === puntoScelto ? scelto : hit.index;
+  if (seleziona(i) != null) popNeurone(i, e.clientX, e.clientY); else pop.style.display = 'none';
+});
+
+// ricerca in alto a destra
+evidIdx = []; let timer;
+const q = document.getElementById('q'), esiti = document.getElementById('esiti');
+q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(cerca, 350); });
+async function cerca() {
+  const s = q.value.trim();
+  spegni(ondaCerca); ondaCerca = null;
+  if (!s) { evidenzia([]); esiti.innerHTML = ''; return; }
+  const r = await (await fetch('cerca?q=' + encodeURIComponent(s))).json();
+  if (q.value.trim() !== s) return;
+  // 12/10: ogni parola accende gli engrammi che la contengono; con piu' parole gli archi fra due engrammi accesi
+  // si illuminano con un'onda da entrambi i capi che si ferma al centro
+  const parole = s.split(/\s+/).filter(Boolean);
+  const trovati = parole.map(w => {
+    const re = new RegExp('(^|[^\\p{L}\\p{N}])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\p{L}\\p{N}])', 'iu');
+    return D.testi.flatMap((t, i) => re.test(t) ? [i] : []);
+  });
+  const ids = [...new Set(trovati.flat())];
+  evidenzia(ids.length ? ids : r.map(x => x[0]), []);
+  if (parole.length > 1) {
+    const dentro = new Set(ids), segs = [];
+    A.forEach(([a, b], k) => {
+      if (!dentro.has(a) || !dentro.has(b)) return;
+      const m = D.pos[a].map((v, d) => (v + D.pos[b][d]) / 2);
+      segs.push([D.pos[a], m, ...STILE[k]], [D.pos[b], m, ...STILE[k]]);
+    });
+    ondaCerca = onda(segs);
+  }
+  const conta = parole.map((w, j) => `${esc(w)}: ${trovati[j].length}`).join(' · ');
+  const archiAccesi = ondaCerca ? ' · archi in comune: ' + ondaCerca.geometry.attributes.d.count / 4 : '';
+  esiti.innerHTML = `<div style="color:#8ea0c9;cursor:default">engrammi con la parola: ${conta}${archiAccesi}</div>` + r.map(([i, sc]) => `<div data-i="${i}">${esc(D.testi[i])} <span style="color:#6b7aa6">${sc}</span></div>`).join('');
+}
+esiti.addEventListener('click', e => {
+  const d = e.target.closest('div[data-i]'); if (!d) return;
+  const i = +d.dataset.i; controls.target.set(...D.pos[i]); if (scelto !== i) seleziona(i);
+  camera.position.set(D.pos[i][0], D.pos[i][1], D.pos[i][2] + 120);
+});
+function evidenzia(ids, soloArchi) {   // soloArchi: gli archi di un ricordo; altrimenti tutti quelli dei neuroni
+  evidIdx = ids;
+  gH.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ids.flatMap(i => D.pos[i])), 3));
+  const segs = (soloArchi || [...new Set(ids.flatMap(i => archiDi[i]))]).flatMap(k => [...D.pos[A[k][0]], ...D.pos[A[k][1]]]);
+  gHL.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
+  gH.computeBoundingSphere(); gHL.computeBoundingSphere();
+  opacitaBase();
+  neuroni.material.opacity = ids.length ? 0.35 : 1; neuroni.material.transparent = ids.length > 0;
+}
+
+// richiamo di un ricordo: catena illuminata + testo ricomposto
+const archiDiRicordo = {};
+A.forEach(([a, b, r], k) => (archiDiRicordo[r] ??= []).push(k));
+const pannello = document.getElementById('ricordo');
+document.getElementById('rx').onclick = () => { pannello.style.display = 'none'; evidenzia([]); };
+function mostraRicordo(n, testo, punti, altri) {
+  const ks = archiDiRicordo[n] || [];
+  let ids = [...new Set(ks.flatMap(k => [A[k][0], A[k][1]]))];
+  if (!ids.length) ids = D.ricordi.flatMap((rs, i) => rs.includes(n) ? [i] : []);   // ricordo di un engramma solo
+  evidenzia(ids, ks);
+  const sotto = punti != null && punti < SOGLIA ? ' · sotto soglia (' + SOGLIA + '): l\'agente non lo riceverebbe' : '';
+  document.getElementById('rt').textContent = 'ricordo ' + n + (punti != null ? ' · punti ' + punti : '') + ' · ' + ids.length + ' engrammi' + sotto;
+  document.getElementById('rtesto').textContent = testo;
+  document.getElementById('ralt').innerHTML = (altri || []).map(x => `<span data-r="${x.id}">ricordo ${x.id} (${x.punti})</span>`).join('');
+  pannello.style.display = 'block';
+  const c = ids.reduce((s, i) => s.map((v, d) => v + D.pos[i][d] / ids.length), [0, 0, 0]);
+  controls.target.set(...c);
+}
+async function apriRicordo(n, punti, altri) {
+  const r = await (await fetch('ricordo?id=' + n)).json();
+  if (r.id != null) mostraRicordo(r.id, r.testo, punti, altri);
+}
+pop.addEventListener('click', e => { const s = e.target.closest('[data-r]'); if (s) { pop.style.display = 'none'; apriRicordo(+s.dataset.r); } });
+pannello.addEventListener('click', e => { const s = e.target.closest('[data-r]'); if (s) apriRicordo(+s.dataset.r, null, ultimi.filter(x => x.id !== +s.dataset.r)); });
+let ultimi = [];
+document.getElementById('rq').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
+  const s = e.target.value.trim(); if (!s) return;
+  document.getElementById('rt').textContent = 'richiamo…'; pannello.style.display = 'block';
+  ultimi = await (await fetch('richiama?q=' + encodeURIComponent(s))).json();
+  if (!ultimi.length) { document.getElementById('rt').textContent = 'nessun ricordo richiamato'; document.getElementById('rtesto').textContent = ''; document.getElementById('ralt').innerHTML = ''; evidenzia([]); return; }
+  if (ultimi[0].punti < SOGLIA) {   // come l'agente: nessun ricordo; i candidati restano cliccabili per curiosita'
+    evidenzia([]);
+    document.getElementById('rt').textContent = 'nessun ricordo (soglia ' + SOGLIA + ')';
+    document.getElementById('rtesto').textContent = '';
+    document.getElementById('ralt').innerHTML = 'i più vicini, sotto soglia: ' + ultimi.map(x => `<span data-r="${x.id}">ricordo ${x.id} (${x.punti})</span>`).join('');
+    return;
+  }
+  const [v, ...altri] = ultimi;
+  mostraRicordo(v.id, v.testo, v.punti, altri);
+});
+
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); controls.handleResize(); });
+renderer.setAnimationLoop(now => { controls.update(); animaOnde(now); renderer.render(scene, camera); });
+</script>
+</body></html>

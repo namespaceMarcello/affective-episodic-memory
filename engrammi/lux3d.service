@@ -1,0 +1,12 @@
+[Unit]
+Description=Lux degli engrammi in 3D (127.0.0.1:8131, dalla pagina notturna: /lux3d/)
+After=network.target embedder-sem.service
+
+[Service]
+WorkingDirectory=/data/memoria-episodica-affettiva/engrammi
+ExecStart=/data/venv-spacy/bin/python lux3d.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

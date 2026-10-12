@@ -284,6 +284,12 @@ Everything runs locally, on one PC: no external APIs, no data leaving the machin
 
 EAR converts audio into a grid for the model's visual channel, the same way the memory codec does with text, and in parallel picks the emotion to inject as a steering vector. The Qwen3-ASR transcript enters the codec as text; four frozen audio models (CLAP, MERT, Dasheng, emotion2vec) are connected through trained bridges to a 5-input copy of the memory codec. The same transcript looks up the memories to recall. Architecture, training phases and status: [EAR-PLAN.md](EAR-PLAN.md).
 
+## The engram Lux (in progress)
+
+A second Lux, in [`engrammi/`](engrammi/), stores memories as indices over shared engrams instead of whole vectors. Each memory is cut with deterministic linguistic rules (spaCy dependency parse, `taglia.py`) into engrams, short pieces such as a subject or a verb with its complements, and the same engram is shared by every memory that contains it. The pieces are joined by Hebbian arcs that belong to one memory and carry parameters: prepositions become symbols, articles become numbers, punctuation and conjunctions become modifiers. A memory exists only through its arcs: recall rebuilds it by walking them in order. Recall works on the memory index through a textual path (same engram) and a semantic path (bge-m3 embeddings), weighted by how rare each engram is, and nothing is delivered below a calibrated threshold; every successful recall strengthens the memory's arcs with the same spaced-stability curve as the original Lux, and arcs that are never recalled fade. The reflex receives at most one memory per message, as the result of the `memorinvolontaria` tool. A 3D viewer of engrams and arcs is in `engrammi/lux3d.py`. Still in design: correcting a memory without deleting it, with negated arcs that fade and correction arcs, inspired by extinction and reconsolidation.
+
+The test procedure for per-layer emotional steering, with contexts up to ~140k tokens, is in [`research/long-context/`](research/long-context/).
+
 ## Future directions
 
 Two developments are on the table, both building on the same visual channel

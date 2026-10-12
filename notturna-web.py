@@ -21,27 +21,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import urlopen
 
 MARKER = "/data/memoria-episodica-affettiva/.ultimo-consolidamento"
-LOG = "/data/memoria-episodica-affettiva/gradino4/distilla.log"
-GRIGLIE = "/data/workspace/memoria/griglie"
 KV_RAM = "/dev/shm/agente-kv"
 KV_SSD = "/data/workspace/kv-slots"
 KV_FILES = ("chat.kv", "pensatoio.kv")
 KV_BYTES_TOK = 22900          # ~22,9 KB/token misurati (640MB / 28k tok)
 CTX_DEFAULT = 143360
 FREEZE = "/usr/local/bin/pensatoio-freeze"
+AGENTE_START = "/usr/local/bin/agente-start"
 NOTTURNA = "/usr/local/bin/notturna"
 DORMI_FLAG = "/data/workspace/memoria/.dormi-richiesto"
 AZLOG = "/data/memoria-episodica-affettiva/notturna-web-azioni.log"
 MEMDB = "/data/workspace/memoria/memoria.db"
 STATO_AVVISO = "/data/state/motore-autonomia.ultimo-avviso-stanchezza"
-GRIGLIE_MAX_FILE = "/data/memoria-episodica-affettiva/.griglie-max"
-# 25/07, scelta di progetto: il cursore dell'intensità griglie è stato TOLTO.
-# L'intensità viene dalla somiglianza (riflesso._alpha_da_cos), non da una
-# manopola: dare lo stesso α a un ricordo lontano e a uno vicino annullava
-# la modulazione, e il cursore stava a 0.05, cinque volte sopra il tetto.
 ARMATA_FILE = "/data/memoria-episodica-affettiva/.notturna-armata"
 PENS_KV = "/dev/shm/agente-kv/pensatoio.kv"
 LLAMA = "http://127.0.0.1:8090"
+LUX3D = "http://127.0.0.1:8131"
 
 
 def _pgrep(pat):
@@ -53,33 +48,6 @@ def _slots():
         return json.load(urlopen(LLAMA + "/slots", timeout=1))
     except Exception:
         return None
-
-
-def _griglie(marker_dt):
-    store = 0
-    if os.path.isdir(GRIGLIE):
-        store = len([f for f in os.listdir(GRIGLIE) if re.fullmatch(r"\d+\.npy", f)])
-    righe, agg, sca = [], 0, 0
-    try:
-        with open(LOG, errors="replace") as fh:
-            for line in fh:
-                if line[:19] < marker_dt:
-                    continue
-                m = re.match(
-                    r"^[\d-]+ (\d\d:\d\d)[\d:,.]* nodo (\d+): loss ([\d.]+), "
-                    r"OUTPUT-match ([\d.]+%), (\d+)s -> "
-                    r"(NUOVA agganciata|nuova SCARTATA\S*)", line)
-                if not m:
-                    continue
-                ok = m.group(6).startswith("NUOVA")
-                agg, sca = agg + ok, sca + (not ok)
-                righe.append({"ora": m.group(1), "nodo": m.group(2),
-                              "loss": m.group(3), "match": m.group(4),
-                              "sec": m.group(5), "ok": ok})
-    except OSError:
-        pass
-    return {"store": store, "righe": righe[-12:], "agganciate": agg,
-            "scartate": sca, "in_corso": _pgrep("distilla-ricordo.py")}
 
 
 def _tier(base):
@@ -117,7 +85,7 @@ def _sistema():
             "ultima_notturna": time.strftime("%d/%m %H:%M", time.localtime(mk)) if mk else "mai",
             "prossima": ("adesso" if mk + 21600 <= time.time()
                          else time.strftime("%d/%m %H:%M", time.localtime(mk + 21600))),
-            "notturna_in_corso": _pgrep("notte-memoria.sh|notte-distilla.sh|distilla-ricordo.py|tagging35b.py")}
+            "notturna_in_corso": _pgrep("notte-memoria.sh|tagging35b.py")}
 
 
 def _gpu():
@@ -164,24 +132,15 @@ def _storico():
     return out
 
 
-def _griglie_max():
-    try:
-        return max(0, min(32, int(open(GRIGLIE_MAX_FILE).read().strip())))
-    except (OSError, ValueError):
-        return 16
-
-
 def dati():
     mk = os.path.getmtime(MARKER) if os.path.exists(MARKER) else 0
-    marker_dt = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mk))
     avviso = os.path.getmtime(STATO_AVVISO) if os.path.exists(STATO_AVVISO) else 0
     return {"ora": time.strftime("%H:%M:%S"),
             "ore_da_notturna": round((time.time() - mk) / 3600, 1) if mk else None,
             "avviso_stanchezza": avviso > mk,
             "notturna_armata": os.path.exists(ARMATA_FILE),
-            "griglie_max": _griglie_max(),
             "gpu": _gpu(), "storico": _storico(),
-            "griglie": _griglie(marker_dt), "sistema": _sistema()}
+            "sistema": _sistema()}
 
 
 # ---------------- azioni (POST /azione) ----------------
@@ -223,7 +182,7 @@ def _lancia_notturna(motivo):
         p.wait(timeout=3)
         return True, open(AZLOG).read().splitlines()[-1]
     except subprocess.TimeoutExpired:
-        return True, "notturna avviata: lavora in sottofondo (segui Griglie)"
+        return True, "notturna avviata: lavora in sottofondo"
 
 
 def _watcher_eos():
@@ -246,6 +205,17 @@ def _watcher_eos():
 
 
 def azione(op, nome):
+    if op == "agente_sveglia":
+        # 30/09: SOLO dal click umano (regola di progetto: l'agente lo riavvia solo l'autrice). agente-start ha la sua guardia GPU.
+        with open(AZLOG, "a") as fh:
+            fh.write(f"{time.strftime('%F %T')} sveglia l'agente (agente-start, dalla dashboard)\n")
+            fh.flush()
+            p = subprocess.Popen([AGENTE_START], stdout=fh, stderr=fh, start_new_session=True)
+        try:
+            p.wait(timeout=5)
+            return p.returncode == 0, open(AZLOG).read().splitlines()[-1]
+        except subprocess.TimeoutExpired:
+            return True, "sveglia avviata: agente-start accende container, 35B e servizi (qualche minuto)"
     if op == "pensatoio_stop":
         r = subprocess.run([FREEZE, "-on"], capture_output=True, text=True)
         return (r.returncode == 0,
@@ -286,14 +256,6 @@ def azione(op, nome):
             return False, no
         ok, err = _slot_op("erase")
         return ok, "slot svuotato: VRAM del contesto liberata" if ok else err
-    if op == "griglie_max":
-        try:
-            v = max(0, min(32, int(nome)))
-        except ValueError:
-            return False, "valore non valido"
-        with open(GRIGLIE_MAX_FILE, "w") as fh:
-            fh.write(str(v))
-        return True, f"prossima notte: al massimo {v} griglie"
     if nome not in KV_FILES:
         return False, "file non ammesso"
     if op in ("vram_ram", "ram_vram", "vram_ssd", "ssd_vram"):
@@ -331,39 +293,42 @@ def azione(op, nome):
 PAGINA = r"""<!doctype html>
 <html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>🌙 Notturna</title>
+<title>Dashboard dell'agente</title>
 <style>
-:root{
-  --bg:#f6f7f9; --card:#ffffff; --ink:#1a202c; --ink2:#5a6472; --muted:#8a93a0;
-  --bordo:#e3e6ea; --ok:#1a7f37; --warn:#9a6700; --err:#c1341b; --accent:#4441d0;
-  --barra-fondo:#eceef1; --btn:#f0f1f4; --btn-bordo:#d5d9de;
+/* 11/10: stile grafico della vecchia dashboard di addestramento (dismessa), stessi colori e stesso tema sole/luna */
+:root{color-scheme:light;
+  --bg:#f4f3ef; --card:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
+  --bordo:#e6e5e0; --ok:#0b7a3a; --warn:#9a6200; --err:#c0362c; --accent:#2a78d6;
+  --barra-fondo:#efeee9; --btn:#efeee9; --btn-bordo:#e6e5e0;
   --ric:#0e7a86; --ok-soft:#cfe8d2;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#14161a; --card:#1d2025; --ink:#e8eaed; --ink2:#a6adb6; --muted:#767e88;
-  --bordo:#2b2f36; --ok:#57ab5a; --warn:#c69026; --err:#e5654e; --accent:#8b88f8;
-  --barra-fondo:#2b2f36; --btn:#262a31; --btn-bordo:#3a3f48;
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5;
+  --barra-fondo:#262624; --btn:#262624; --btn-bordo:#2d2d2a;
   --ric:#4cc4d4; --ok-soft:#23432a;
 }}
-:root[data-theme="dark"]{
-  --bg:#14161a; --card:#1d2025; --ink:#e8eaed; --ink2:#a6adb6; --muted:#767e88;
-  --bordo:#2b2f36; --ok:#57ab5a; --warn:#c69026; --err:#e5654e; --accent:#8b88f8;
-  --barra-fondo:#2b2f36; --btn:#262a31; --btn-bordo:#3a3f48;
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5;
+  --barra-fondo:#262624; --btn:#262624; --btn-bordo:#2d2d2a;
   --ric:#4cc4d4; --ok-soft:#23432a;
 }
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif;padding:20px}
-header{display:flex;align-items:baseline;gap:10px;max-width:1060px;margin:0 auto 16px}
-header h1{font-size:19px;font-weight:650}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 60px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;max-width:1100px;margin:0 auto 14px}
+header h1{font-size:22px;font-weight:700}
+header nav{margin-left:auto}
+.tema{background:none;border:1px solid var(--bordo);border-radius:50%;width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;color:var(--ink);cursor:pointer;vertical-align:middle}
 header .ora{color:var(--muted);font-variant-numeric:tabular-nums}
-main{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));max-width:1060px;margin:0 auto}
-section{background:var(--card);border:1px solid var(--bordo);border-radius:10px;padding:16px 18px}
-h2{font-size:12px;font-weight:650;letter-spacing:.08em;color:var(--ink2);text-transform:uppercase;margin-bottom:12px}
+main{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));max-width:1100px;margin:0 auto}
+section{background:var(--card);border-radius:12px;padding:14px 16px}
+h2{font-size:16px;font-weight:600;color:var(--ink);margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .riga{display:flex;justify-content:space-between;gap:8px;padding:3px 0}
 .riga .k{color:var(--ink2)}
 .num{font-variant-numeric:tabular-nums}
 .stato-ok{color:var(--ok)} .stato-warn{color:var(--warn)} .stato-err{color:var(--err)}
-.chip{font-weight:600}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--btn);font-size:12px;font-weight:600;white-space:nowrap}
 .metro{margin:8px 0}
 .metro .sopra{display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px}
 .metro .sopra .k{color:var(--ink2)} .metro .sopra .v{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -378,7 +343,7 @@ td.ok{color:var(--ok)} td.err{color:var(--err)}
 .grande small{font-size:13px;font-weight:400;color:var(--ink2);margin-left:6px}
 .vuoto{color:var(--muted);font-style:italic}
 button{background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);
-  border-radius:7px;padding:5px 10px;font:12.5px system-ui;cursor:pointer}
+  border-radius:8px;padding:6px 14px;font:inherit;cursor:pointer}
 button:hover{border-color:var(--accent)}
 button:disabled{opacity:.45;cursor:default}
 .bottoni{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
@@ -398,11 +363,23 @@ button:disabled{opacity:.45;cursor:default}
 .btn-cache{border-color:var(--ok);color:var(--ok);font-weight:600;min-width:108px;text-align:left}
 input[type=range]{width:100%;accent-color:var(--ok);cursor:pointer}
 .largo{grid-column:1/-1}
-footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
-</style></head><body>
-<header><h1>🌙 Notturna</h1><span class="ora" id="ora">…</span>
+footer{max-width:1100px;margin:14px auto 0;color:var(--muted);font-size:12px}
+</style>
+<script>
+// 11/10: pulsante sole/luna della dashboard. Senza scelta salvata segue il browser; un tocco passa all'altro tema e lo ricorda.
+const SOLE='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const LUNA='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+function scuroAdesso(){const d=document.documentElement.dataset.theme;return d?d==="dark":matchMedia("(prefers-color-scheme: dark)").matches}
+function disegnaTema(){const el=document.getElementById("tema");if(!el)return;el.innerHTML=scuroAdesso()?SOLE:LUNA;el.title=scuroAdesso()?"Passa al tema chiaro":"Passa al tema scuro"}
+function cambiaTema(){const x=scuroAdesso()?"light":"dark";document.documentElement.dataset.theme=x;try{localStorage.setItem("tema-dashboard",x)}catch(e){}disegnaTema()}
+(function(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x})();
+document.addEventListener("DOMContentLoaded",disegnaTema);
+</script>
+</head><body>
+<header><h1>🧭 Dashboard</h1><span class="ora" id="ora">…</span>
 <span class="ora" id="h-notturna"></span>
-<span class="chip stato-warn" id="notturna-chip"></span></header>
+<span class="chip stato-warn" id="notturna-chip"></span>
+<nav><button id="tema" class="tema" onclick="cambiaTema()" aria-label="Cambia tema chiaro/scuro"></button></nav></header>
 <main>
 <section><h2>Sistema</h2>
   <div class="riga"><span class="k">35B <i class="info" data-tip="35 miliardi di parametri: il modello che fa girare l'agente (Occamy-1.0, post-training del Qwen3.6-35B, quantizzato Q8_0).">ⓘ</i> (:8090)</span><span id="s-35b">…</span></div>
@@ -410,6 +387,7 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
   <div class="riga"><span class="k">riflesso (:8091)</span><span id="s-rifl">…</span></div>
   <div class="riga"><span class="k">pensatoio</span><span id="s-pens">…</span></div>
   <div class="bottoni">
+    <button id="btn-sveglia" onclick="fai_conf('agente_sveglia','Sveglio l\'agente? agente-start accende container, 35B e servizi (qualche minuto). Il pensatoio NON riparte da solo.')">☀ sveglia l'agente</button>
     <button id="btn-pens-on" onclick="fai('pensatoio_start','')">▶ riavvia pensatoio</button>
     <button id="btn-pens" onclick="fai('pensatoio_stop','')">❄ ferma pensatoio</button>
   </div>
@@ -417,6 +395,8 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
   <div class="bottoni">
     <button onclick="finestra('/')">🧠 stream del reasoning</button>
     <button onclick="finestra('/diario')">📖 diario del riflesso</button>
+    <button onclick="window.open('/lux3d/','_blank')">✨ Lux in 3D</button>
+    <button onclick="window.open('/emozioni/','_blank')">🎭 emozioni per layer</button>
   </div>
 </section>
 <section><h2>Riposo</h2>
@@ -448,18 +428,6 @@ footer{max-width:1060px;margin:14px auto 0;color:var(--muted);font-size:12px}
 </section>
 <section><h2>GPU <i class="info" data-tip="I valori di nvidia-smi sulla RTX 5060 Ti: uso del processore grafico, VRAM occupata, temperatura, potenza assorbita e ventola.">ⓘ</i></h2>
   <div id="gpu-metri"><span class="vuoto">nvidia-smi non disponibile</span></div>
-</section>
-<section><h2>Griglie</h2>
-  <div class="grande"><span id="g-store">…</span><small>nello store</small></div>
-  <div class="riga" style="margin-top:6px"><span class="k">griglie prossima notte
-    <i class="info" data-tip="Quante griglie al massimo verranno distillate nella prossima notturna (parametro --max di notte-distilla). Si regola col cursore, anche con la rotella del mouse.">ⓘ</i></span>
-    <span class="num chip" id="gmax-val">…</span></div>
-  <input type="range" id="gmax" min="0" max="32" step="1">
-  <div class="riga"><span class="k">ultimo ciclo</span>
-    <span><span class="stato-ok num" id="g-agg">0 agganciate</span> ·
-          <span class="num" id="g-sca">0 scartate</span></span></div>
-  <div id="g-corso"></div>
-  <table id="g-tab"></table>
 </section>
 <section class="largo"><h2>Storia <i class="info" data-tip="Per ogni giorno: quanti ricordi vivono nel grafo.">ⓘ</i></h2>
   <div id="grafico"><span class="vuoto">nessun dato</span></div>
@@ -575,7 +543,7 @@ function grafico(st){
   s+="</svg>";
   box.innerHTML=s;
 }
-let gmaxTouch=0, busyVisto=0, ultimoSlot=0;
+let busyVisto=0, ultimoSlot=0;
 async function giro(){
   let d;
   try{ d=await (await fetch("dati.json")).json(); }
@@ -589,8 +557,6 @@ async function giro(){
       : '<span class="stato-ok">nessun avviso di stanchezza (parte a 16 h)</span>');
   $("gpu-metri").innerHTML=gpuMetri(d.gpu);
   grafico(d.storico);
-  const gm=$("gmax");
-  if(Date.now()-gmaxTouch>5000){ gm.value=d.griglie_max; $("gmax-val").textContent=d.griglie_max; }
   const s=d.sistema;
   armata=d.notturna_armata;
   const bn=$("btn-notturna");
@@ -604,6 +570,7 @@ async function giro(){
   $("notturna-chip").textContent=s.notturna_in_corso?"▶ notturna in corso"
     :(armata?"🌙 armata: parte al prossimo EOS del pensatoio":"");
   stato($("s-35b"),s.su,"su, agente sveglio","giù, agente dorme");
+  $("btn-sveglia").disabled=s.su;
   // isteresi 10s: mentre l'agente pensa fitto, la riga non sfarfalla
   // tra "in volo" e "libero" a ogni campione
   if(s.busy) busyVisto=Date.now();
@@ -624,32 +591,13 @@ async function giro(){
   for(const k of s.kv_ram) metri.push({nome:k.nome+" (RAM)",tok:k.tok,nota:"stima da file, salvato "+k.salvato});
   $("cw-metri").innerHTML=metri.map(m=>metro(m,s.ctx)).join("");
   $("kv-manovre").innerHTML=manovre(s);
-  const g=d.griglie;
-  $("g-store").textContent=g.store;
-  $("g-agg").textContent=g.agganciate+" agganciate";
-  $("g-sca").textContent=g.scartate+" scartate";
-  $("g-sca").className=(g.scartate>0?"stato-err":"")+" num";
-  $("g-corso").innerHTML=g.in_corso?'<div class="riga stato-warn">▶ distillazione in corso</div>':"";
-  $("g-tab").innerHTML=g.righe.length
-    ? "<tr><th>ora</th><th>nodo</th><th>loss</th><th>match</th><th>t</th><th></th></tr>"+
-      g.righe.map(r=>`<tr><td>${r.ora}</td><td>${r.nodo}</td><td>${r.loss}</td>`+
-        `<td>${r.match}</td><td>${r.sec}s</td>`+
-        `<td class="${r.ok?"ok":"err"}">${r.ok?"✔ agganciata":"✘ scartata"}</td></tr>`).join("")
-    : '<tr><td class="vuoto">nessuna griglia in questo ciclo</td></tr>';
 }
-const gmax=$("gmax");
-gmax.addEventListener("input",()=>{ $("gmax-val").textContent=gmax.value; gmaxTouch=Date.now(); });
-gmax.addEventListener("change",()=>{ gmaxTouch=Date.now(); fai("griglie_max",gmax.value); });
-gmax.addEventListener("wheel",e=>{
-  e.preventDefault();
-  gmax.value=Math.max(0,Math.min(32,+gmax.value+(e.deltaY<0?1:-1)));
-  gmax.dispatchEvent(new Event("input"));
-  clearTimeout(gmax._t);
-  gmax._t=setTimeout(()=>gmax.dispatchEvent(new Event("change")),400);
-},{passive:false});
+
 giro(); setInterval(giro,3000);
 </script></body></html>"""
 
+
+EMOZIONI = "/data/memoria-episodica-affettiva/research/long-context/4-steering-per-layer/emozioni-layer"
 
 class H(BaseHTTPRequestHandler):
     def _manda(self, corpo, tipo):
@@ -664,6 +612,30 @@ class H(BaseHTTPRequestHandler):
             self._manda(json.dumps(dati()).encode(), "application/json")
         elif self.path == "/":
             self._manda(PAGINA.encode(), "text/html; charset=utf-8")
+        elif self.path == "/lux3d":
+            self.send_response(301)
+            self.send_header("Location", "/lux3d/")
+            self.end_headers()
+        elif self.path.startswith("/lux3d/"):   # 12/10: il Lux in 3D (lux3d.py, solo 127.0.0.1) passa da qui
+            try:
+                r = urlopen(LUX3D + self.path[len("/lux3d"):], timeout=60)
+                self._manda(r.read(), r.headers.get("Content-Type", "application/octet-stream"))
+            except Exception as e:
+                self._manda(f"Lux 3D non raggiungibile ({e}): systemctl --user status lux3d".encode(),
+                            "text/plain; charset=utf-8")
+        elif self.path == "/emozioni":
+            self.send_response(301)
+            self.send_header("Location", "/emozioni/")
+            self.end_headers()
+        elif self.path.startswith("/emozioni/"):   # 12/10: steering per layer (research/long-context/4-steering-per-layer/analizza_layer.py)
+            nome = self.path[len("/emozioni/"):].split("?")[0] or "index.html"
+            f = os.path.realpath(os.path.join(EMOZIONI, nome))
+            if not f.startswith(EMOZIONI + "/") or not os.path.isfile(f):
+                self.send_error(404)
+                return
+            tipo = {".html": "text/html; charset=utf-8", ".json": "application/json",
+                    ".md": "text/plain; charset=utf-8"}.get(os.path.splitext(f)[1], "application/octet-stream")
+            self._manda(open(f, "rb").read(), tipo)
         else:
             self.send_error(404)
 
@@ -683,7 +655,15 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # 11/10: la dashboard di addestramento e' dismessa; questa pagina prende il suo posto sulla :8095,
+    # su localhost e sull'IP della VPN Tailscale (100.x)
     porta = int(sys.argv[1]) if len(sys.argv) > 1 else 8095
+    ts = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True).stdout.split()
+    indirizzi = ["127.0.0.1"] + [ip for ip in ts if ip.startswith("100.")]
+    if len(indirizzi) == 1:
+        raise SystemExit("Tailscale non ancora su: esco, systemd riprova")
+    for ip in indirizzi[1:]:
+        threading.Thread(target=ThreadingHTTPServer((ip, porta), H).serve_forever, daemon=True).start()
     threading.Thread(target=_watcher_eos, daemon=True).start()
-    # ponytail: 127.0.0.1 fisso; per leggerla da fuori (VPN) cambiare in ""
-    ThreadingHTTPServer(("127.0.0.1", porta), H).serve_forever()
+    print("notturna su " + ", ".join(f"http://{ip}:{porta}" for ip in indirizzi), flush=True)
+    ThreadingHTTPServer((indirizzi[0], porta), H).serve_forever()

@@ -92,7 +92,7 @@ GATE = "/data/workspace/memoria/stato.py"
 #   1. la pipeline notturna sta girando (stesso pattern del cruscotto)
 #   2. la dormita è stata chiesta e non è ancora partita (flag)
 #   3. il 35B non ascolta più su :8090 (per il cruscotto = "l'agente dorme")
-NOTTURNA_IN_CORSO = "notte-memoria.sh|notte-distilla.sh|distilla-ricordo.py|tagging35b.py"
+NOTTURNA_IN_CORSO = "notte-memoria.sh|tagging35b.py"
 FLAG_NOTTE = Path("/data/workspace/memoria/.notte-richiesta")
 PORTA_35B = ":8090"
 
