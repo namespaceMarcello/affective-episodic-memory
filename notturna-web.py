@@ -397,7 +397,7 @@ document.addEventListener("DOMContentLoaded",disegnaTema);
     <button onclick="finestra('/diario')">📖 diario del riflesso</button>
     <button onclick="location.href='/lux3d/'">✨ Lux in 3D</button>
     <button onclick="location.href='/emozioni/'">🎭 emozioni per layer</button>
-    <button onclick="location.href='/vettori/'">🧭 vettori italiani</button>
+    <button onclick="location.href='/vettori/'">🧭 vettori emotivi</button>
   </div>
 </section>
 <section><h2>Riposo</h2>
@@ -599,7 +599,7 @@ giro(); setInterval(giro,3000);
 
 
 EMOZIONI = "/data/memoria-episodica-affettiva/research/long-context/4-steering-per-layer/emozioni-layer"
-VETTORI = "/data/memoria-episodica-affettiva/research/long-context/5-vettori-italiani/vettori-pagina"
+VETTORI = "/data/memoria-episodica-affettiva/research/long-context/6-template-lens/vettori-pagina"   # 12/10 sera: vettori col metodo del paper (prima 5-vettori-italiani)
 
 class H(BaseHTTPRequestHandler):
     def _manda(self, corpo, tipo):
@@ -629,6 +629,13 @@ class H(BaseHTTPRequestHandler):
             nome = self.path[len("/vettori/"):].split("?")[0] if self.path.startswith("/vettori/") else ""
             if self.path == "/vettori":
                 self.send_response(301); self.send_header("Location", "/vettori/"); self.end_headers(); return
+            # 12/10 sera: a estrazione in corso la pagina si rigenera quando ci sono passaggi o vettori nuovi
+            sorgenti_v = [VETTORI.rsplit("/", 1)[0] + "/fatti.txt", "/data/jspace/out-occamy/vettori-paper.pt"]
+            dati_v = VETTORI + "/dati.json"
+            if (nome or "index.html") in ("index.html", "dati.json") and any(
+                    os.path.exists(s) and (not os.path.exists(dati_v) or os.path.getmtime(s) > os.path.getmtime(dati_v)) for s in sorgenti_v):
+                subprocess.run(["/data/jspace/venv/bin/python", VETTORI.rsplit("/", 1)[0] + "/pagina_vettori.py"],
+                               capture_output=True, timeout=120)
             f = os.path.realpath(os.path.join(VETTORI, nome or "index.html"))
             if not f.startswith(VETTORI + "/") or not os.path.isfile(f):
                 self.send_error(404)

@@ -124,7 +124,51 @@ def fatti():
             r = json.loads(riga)
             if r.get("fine"):
                 s.add((r["k"], r["emo"], r["layer"]))
+            elif r.get("fine_rifinitura"):
+                s.add(("rif", r["k"], r["emo"], r["layer"]))
     return s
+
+
+def da_rifinire(k):
+    """12/10: range efficace (prima-ultima dose efficace) di ogni serie chiusa del contesto k sulla scala a 0.02"""
+    grezzi, chiuse = {}, set()
+    for riga in open(OUT):
+        r = json.loads(riga)
+        if r.get("k") != k or r.get("base") or r.get("rifinitura") or r.get("fine_rifinitura"):
+            continue
+        c = (r["emo"], r["layer"])
+        if r.get("fine"):
+            chiuse.add(c)
+            continue
+        g = grezzi.setdefault(c, {})
+        if g and r["dose"] <= max(g):   # serie ricominciata dopo un'interruzione: vale la nuova
+            g.clear()
+        g[r["dose"]] = r
+    ranges = {}
+    for c in chiuse:
+        ef = [d for d, r in grezzi.get(c, {}).items() if efficace(r)]
+        if ef:
+            ranges[c] = (min(ef), max(ef))
+    return ranges
+
+
+def rifinitura(x, base, sb, gia, out):
+    """12/10: a fine contesto, per ogni range efficace, dosi da (inizio - 0.02) a (fine + 0.02) a passi
+    di 0.001, saltando quelle gia' misurate sulla scala a 0.02"""
+    for (e, layer), (da, a) in sorted(da_rifinire(x["k"]).items(), key=lambda c: (T.NOMI.index(c[0][0]), c[0][1])):
+        if ("rif", x["k"], e, layer) in gia:
+            continue
+        t0, n = time.time(), 0
+        for i in range(round((da - 0.02) * 1000), round((a + 0.02) * 1000) + 1):
+            if i <= 0 or i % 20 == 0:
+                continue
+            r = punto(x["testo"], base, sb, e, layer, round(i / 1000, 3))
+            n += 1
+            out.write(json.dumps(dict(r, k=x["k"], n_token=x["n_token"], testo=r["testo"][:300], rifinitura=True),
+                                 ensure_ascii=False) + "\n")
+        out.write(json.dumps({"fine_rifinitura": True, "k": x["k"], "emo": e, "layer": layer, "da": da, "a": a}) + "\n")
+        out.flush()
+        print(f"   rifinitura {e} L{layer} {da}-{a}: {n} punti in {time.time() - t0:.0f}s", flush=True)
 
 
 def main():
@@ -137,7 +181,8 @@ def main():
     out = open(OUT, "a")
     prec = None
     for x in ctxs:
-        if all((x["k"], e, l) in gia for e in T.NOMI for l in LAYER):
+        if all((x["k"], e, l) in gia for e in T.NOMI for l in LAYER) and all(
+                ("rif", x["k"], e, l) in gia for e, l in da_rifinire(x["k"])):
             prec = x
             continue
         print(f"== contesto {x['k']} ({x['n_token']} token)", flush=True)
@@ -168,6 +213,8 @@ def main():
                                       "ultima_dose": dose}) + "\n")
                 out.flush()
             print(f"   {e}: {npunti} punti in {time.time() - t0:.0f}s", flush=True)
+        print(f"== rifinitura contesto {x['k']}", flush=True)
+        rifinitura(x, base, sb, gia, out)
 
 
 # 12/10: la parola intrusa si cerca in ITALIANO (nome italiano di emozioni.json), parola intera:

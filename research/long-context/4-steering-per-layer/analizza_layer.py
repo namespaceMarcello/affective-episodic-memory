@@ -24,19 +24,23 @@ def efficace(r):
 
 def main():
     basi = {}   # k -> testo senza vettore
-    grezzi, chiuse = defaultdict(dict), set()   # una serie conta solo se chiusa ("fine"); alla ripresa l'ultima si rifa'
+    grezzi, chiuse, rif = defaultdict(dict), set(), defaultdict(dict)   # una serie conta solo se chiusa ("fine"); alla ripresa l'ultima si rifa'
     for riga in open(f"{D}/steering-layer.jsonl"):
         r = json.loads(riga)
         if r.get("base"):
             basi[r["k"]] = r["testo"]
         elif r.get("fine"):
             chiuse.add((r["emo"], r["layer"], r["k"]))
+        elif r.get("fine_rifinitura"):
+            pass
+        elif r.get("rifinitura"):   # 12/10: dosi a passi di 0.001 attorno ai range, si aggiungono alla serie
+            rif[(r["emo"], r["layer"], r["k"])][r["dose"]] = r
         else:
             g = grezzi[(r["emo"], r["layer"], r["k"])]
             if g and r["dose"] <= max(g):   # la serie ricomincia (ripresa dopo un'interruzione): vale la nuova
                 g.clear()
             g[r["dose"]] = r
-    punti = {c: [v[d] for d in sorted(v)] for c, v in grezzi.items() if c in chiuse}   # (emo, layer, k) -> punti per dose
+    punti = {c: [w[d] for d in sorted(w)] for c, v in grezzi.items() if c in chiuse for w in [{**v, **rif[c]}]}   # (emo, layer, k) -> punti per dose
     ctxs = {c["k"]: c for c in json.load(open(f"{D}/contesti-layer.json"))}
     emozioni = sorted({e for e, _, _ in punti})
     dati = {"layer": LAYER, "contesti": [ctxs[k] for k in sorted(ctxs)], "emozioni": {},
@@ -74,7 +78,7 @@ def main():
                 per_dose = {r["dose"]: r for r in punti[(e, Lb, k)]}
                 celle = []
                 for i in range(-5, 6):
-                    d = round(b["dose"] + 0.02 * i, 2)
+                    d = round(round(b["dose"] / 0.02) * 0.02 + 0.02 * i, 2)   # la tabella resta sulla scala a 0.02
                     r = per_dose.get(d)
                     celle.append(None if r is None else {"dose": d, "rango": r.get("rango"), "eco": round(r.get("eco", 0), 3),
                                                          "efficace": efficace(r), "parola": r["parola"], "rotto": r["rotto"],

@@ -8,6 +8,7 @@
 # 51 emozioni (tara_emozioni.py), server -c 143360. "layer" = steering_layer.py (ogni emozione su ogni layer
 # L15-L32, 14 contesti fino a 140k, cache dei prefissi in slot/) poi analizza_layer.py (schede e pagina).
 # "emovec" = vettori emotivi italiani contrastivi sul dataset diaristico (5-vettori-italiani/emovec_it.py).
+# "paper" = vettori col metodo del paper workspace: J-lens per le parole di un token, template lens per le altre (6-template-lens/).
 set -u
 D=/data/memoria-episodica-affettiva/research/long-context; cd $D
 BIN=${LUXIFER_PROVA:-/data/luxifer-prova}/build-prova/bin/llama-server
@@ -50,6 +51,13 @@ echo "== fine $(date +%T)"
 exit 0
 fi
 
+if [[ $FASI == paper ]]; then
+echo "== vettori col metodo del paper (J-lens + template lens) $(date +%T)"
+server 8192
+HF_HOME=/data/jspace/hf HF_HUB_OFFLINE=1 $PY -u 6-template-lens/estrai_vettori.py 2>&1 | tee -a 6-template-lens/log-estrai.txt
+echo "== fine $(date +%T)"
+exit 0
+fi
 if [[ $FASI == layer ]]; then
 echo "== steering per layer $(date +%T)"
 mkdir -p 4-steering-per-layer/slot
