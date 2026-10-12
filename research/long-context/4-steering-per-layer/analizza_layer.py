@@ -91,6 +91,12 @@ def main():
                                       "parola": r["parola"], "rotto": r["rotto"]})
         dati["emozioni"][e] = {"layer": per_layer, "migliore": Lb, "finestra": finestra, "confronto": confronto}
         scheda(e, dati["emozioni"][e], ctxs, dati["it"][e])
+    # 12/10: cosa e' in prova adesso: contesto dall'ultimo "== contesto" del log, emozione/layer/dose dall'ultimo punto
+    kk = [int(r.split()[2]) for r in open(f"{D}/log-layer.txt") if r.startswith("== contesto")]
+    ultimo = json.loads(open(f"{D}/steering-layer.jsonl").readlines()[-1])
+    if kk:
+        dati["in_corso"] = {"k": kk[-1], "n_token": ctxs[kk[-1]]["n_token"], "emo": ultimo["emo"],
+                            "layer": ultimo["layer"], "dose": ultimo.get("dose")}
     os.makedirs(OUT, exist_ok=True)
     json.dump(dati, open(f"{OUT}/dati.json", "w"), ensure_ascii=False)
     html = open(f"{D}/pagina-emozioni.html").read()

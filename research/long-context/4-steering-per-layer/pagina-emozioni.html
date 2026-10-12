@@ -155,12 +155,16 @@ function apri(e){aperta=e;const x=D.emozioni[e],Lb=x.migliore,b=x.layer[Lb];
   $("scheda").innerHTML=`<h2>${it(e)}</h2><div class="grande">L${Lb}<small>efficace in ${pc(b.efficacia)} dei contesti · intensità ${b.dose??"–"}${b.dev!=null?" (dev. std "+b.dev+")":""} · range ${b.da??"–"}–${b.a??"–"}</small></div>
   <div class="tabwrap"><table><tr><th>layer</th><th>efficacia</th><th>intensità</th><th>dev. std</th><th>range efficace</th><th>eco</th><th>rotto da</th></tr>${righe}</table></div>${fin}`;
   $("scheda").scrollIntoView({behavior:"smooth",block:"start"})}
-fetch("dati.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{D=d;
+let primo=true;
+function carica(){fetch("dati.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{D=d;
   const sc=e=>{const x=D.emozioni[e],b=x.layer[x.migliore];return b.efficacia*10+(b.eco||0)};
   ordine=Object.keys(D.emozioni).sort((a,b)=>sc(b)-sc(a));
   const n=Object.keys(D.emozioni).length;
-  $("stato").textContent=`${n}/51 emozioni · ${D.contesti.length} contesti fino a ${Math.max(...D.contesti.map(c=>c.n_token)).toLocaleString("it")} token`;
-  disegna();matchMedia("(prefers-color-scheme: dark)").addEventListener("change",disegna)})
- .catch(()=>{$("stato").textContent="dati non ancora disponibili"});
+  const c=D.in_corso;
+  $("stato").textContent=(c?`in prova: contesto ${c.k} (${c.n_token.toLocaleString("it")} token) · ${it(c.emo)} · L${c.layer} · `:"")+
+    `${n}/51 emozioni · ${D.contesti.length} contesti fino a ${Math.max(...D.contesti.map(c=>c.n_token)).toLocaleString("it")} token`;
+  disegna();if(primo){primo=false;matchMedia("(prefers-color-scheme: dark)").addEventListener("change",disegna)}})
+ .catch(()=>{if(primo)$("stato").textContent="dati non ancora disponibili"})}
+carica();setInterval(carica,60000);   // 12/10: si aggiorna da sola ogni minuto
 </script>
 </body></html>
