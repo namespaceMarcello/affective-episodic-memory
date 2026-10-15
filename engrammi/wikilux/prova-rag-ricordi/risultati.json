@@ -1,0 +1,56 @@
+{
+ "Lux frasi libere": [
+  9,
+  12,
+  14,
+  116
+ ],
+ "Lux due engrammi": [
+  33,
+  39,
+  40,
+  98
+ ],
+ "Lux frasi esatte": [
+  37,
+  39,
+  40,
+  169
+ ],
+ "RAG frasi libere": [
+  11,
+  14,
+  14,
+  63
+ ],
+ "RAG due engrammi": [
+  5,
+  10,
+  40,
+  43
+ ],
+ "RAG frasi esatte": [
+  29,
+  33,
+  40,
+  61
+ ],
+ "bm25 frasi libere": [
+  11,
+  14,
+  14,
+  0
+ ],
+ "bm25 due engrammi": [
+  31,
+  39,
+  40,
+  0
+ ],
+ "bm25 frasi esatte": [
+  40,
+  40,
+  40,
+  0
+ ]
+}

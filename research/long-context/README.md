@@ -23,19 +23,23 @@ Launcher: `lancia.sh` (`./lancia.sh` = tests 1 and 2, `./lancia.sh taratura`, `.
 
 ## Test procedure for per-layer steering
 
-- One layer at a time: each of the 51 emotions on each layer L15-L32.
+- One emotion at a time on all contexts: each of the 51 emotions on each layer L15-L32.
 - Dose from 0.02 to 1.0 in steps of 0.02 (HF units; the server receives dose x sqrt(2048) in relative mode).
 - Early stop on oversteering (broken text, or the emotion's Italian word appearing in the text, singular or
   plural) or on loss of effectiveness (after an effective point, 3 non-effective doses in a row; or 6 doses
   without a better echo and the last one 0.10 below the best).
-- 14 contexts of growing length: the real system prompt, then ~12k tokens at a time of real conversation, each
-  block on a different topic, up to ~140k tokens, always ending with the same final user message.
+- 10 contexts of growing length (C0-C9): the real system prompt with the definitions of the agent's 19 tools, then
+  real conversation, each block on a different topic, up to 140k tokens, always ending with the same final user
+  message. The baseline without vector is generated once per context.
+- Each point: the vector is on until the first sentence-end period or `</think>`, then off. Generation goes on up
+  to 256 tokens and stops at the end of the first tool call.
 - Server cache per context saved to disk (`/slots save`): context K+1 restarts from K and only processes the new
   block; after a crash the run resumes from the closed series.
 - Measured per point: text changed against the baseline; echo = cosine between the L29-lens shift of the
   generated text and the emotion's real "face" (mean of the agent's memories tagged with it); rank of the right
-  face among the 51; intruding word; broken text.
-- Effective point = changed, clean text with the right face in the top 3. Per emotion and layer: effectiveness
+  face among the 51; intruding word; broken text; tool call present, well formed, calling an existing tool, with
+  parameters valid for that tool's schema.
+- Effective point = changed, clean text with the right face in the top 4. Per emotion and layer: effectiveness
   (share of contexts with at least one effective dose), effective dose (median of the best doses, with standard
   deviation), effective range, dose at which the text breaks. Best layer = highest effectiveness.
 - The new emotion vector file takes the best layer and dose of each emotion; it goes into production only by

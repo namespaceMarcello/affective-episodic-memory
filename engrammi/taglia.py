@@ -4,7 +4,13 @@ Per ogni proposizione: il soggetto e' un engramma, il resto (verbo + complementi
 Congiunzioni e punteggiatura fra pezzi diventano etichette d'arco, scritte {e}, {:}; gli engrammi fra quadre.
 Un complemento di un nome si stacca: [la casa][di][mattoni rossi]; un nome proprio si stacca dal suo verbo:
 [visitando][Parigi] (11/10).
-ponytail: regole sulle dipendenze di spaCy it_core_news_lg"""
+ponytail: regole sulle dipendenze di spaCy it_core_news_lg
+Lingue (15/10): ogni frase va allo spaCy della sua lingua. Riconoscitore lingua-py ristretto a italiano e
+inglese; una frase passa all'inglese solo con sicurezza > SICUREZZA_LINGUA (gli italiani usano parole straniere:
+"ok" resta italiano). Un testo senza frasi inglesi si taglia intero come prima, quindi i ricordi italiani non cambiano.
+Inglese: stesse idee con le etichette di en_core_web_lg (prep/pobj al posto di case, "that"/"which"/"who" come "che").
+Le preposizioni inglesi sono parametri d'arco ma non hanno il codice compatto delle italiane (finiscono fra gli altri
+parametri, da 100 in su): ricomponendo restano inglesi. Altre lingue: si aggiungono a LINGUE quando servira'."""
 import re
 import sqlite3
 import sys
@@ -12,7 +18,7 @@ import sys
 import spacy
 
 DB = "/data/workspace/memoria/memoria.db"
-SOGG = {"nsubj", "nsubj:pass", "csubj"}
+SOGG = {"nsubj", "nsubj:pass", "csubj", "nsubjpass", "csubjpass"}   # gli ultimi due: etichette inglesi
 ABBREV = {"art.", "artt.", "n.", "nn.", "p.", "pp.", "pag.", "cap.", "vol.", "fig.", "par.", "co.", "c.", "lett.", "no.", "v.", "es.", "ca.", "nr.", "al."}
 
 
@@ -28,6 +34,55 @@ def fine_frase(doc):
 
 nlp = spacy.load("it_core_news_lg")   # il piccolo sbaglia le categorie (es. "cosciente" come verbo)
 nlp.add_pipe("fine_frase", before="parser")
+SICUREZZA_LINGUA = 0.9
+_nlp_en = _rivelatore = None
+
+
+def nlp_en():
+    global _nlp_en
+    if _nlp_en is None:
+        _nlp_en = spacy.load("en_core_web_lg")
+    return _nlp_en
+
+
+def rivelatore():
+    global _rivelatore
+    if _rivelatore is None:
+        from lingua import Language, LanguageDetectorBuilder
+        _rivelatore = (LanguageDetectorBuilder.from_languages(Language.ITALIAN, Language.ENGLISH).build(), Language.ENGLISH)
+    return _rivelatore
+
+
+FRASE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def per_lingua(testo):
+    """testo -> [(lingua, pezzo di testo)]: frasi consecutive della stessa lingua insieme, separatori compresi"""
+    d, EN = rivelatore()
+    parti, inizio = [], 0
+    for m in FRASE.finditer(testo):
+        parti.append(testo[inizio:m.end()]); inizio = m.end()
+    parti.append(testo[inizio:])
+    # sicura: inglese sopra SICUREZZA_LINGUA, italiana sotto 0.5 o sotto le 3 parole; in mezzo (es. "It has a
+    # reputation for:" a 0.81) prende la lingua della frase sicura piu' vicina, prima la precedente
+    conf = [d.compute_language_confidence(x, EN) if x.strip() and len(x.split()) >= 3 else None for x in parti]
+    sicura = ["en" if c is not None and c > SICUREZZA_LINGUA else "it" if c is not None and c < 0.5 or c is None and x.strip() else None
+              for c, x in zip(conf, parti)]
+    lingue = []
+    for k, (c, x) in enumerate(zip(conf, parti)):
+        if sicura[k] or not x.strip():
+            lingue.append(sicura[k] or (lingue[-1] if lingue else "it"))
+            continue
+        prima = next((sicura[j] for j in range(k - 1, -1, -1) if sicura[j]), None)
+        dopo = next((sicura[j] for j in range(k + 1, len(parti)) if sicura[j]), None)
+        lingue.append(prima or dopo or "it")
+    out = []
+    for x, lingua in zip(parti, lingue):
+        if out and out[-1][0] == lingua:
+            out[-1] = (lingua, out[-1][1] + x)
+        else:
+            out.append((lingua, x))
+    return out
 
 
 FORMATO = re.compile(r"\*\*|__|(?<!\w)[*_](?=\S)|(?<=\S)[*_](?!\w)|`|^#+\s*", re.M)   # grassetto, corsivo, codice, titoli
@@ -44,8 +99,21 @@ def proclitico(t):
     return t.lower_ in PROCLITICI and "Yes" in t.morph.get("Clitic") and (t.i == 0 or t.doc[t.i - 1].whitespace_ != "")
 
 
+def legame_en(t):
+    """come legame, in inglese: punteggiatura, congiunzioni, preposizioni (prep, agent), "that"/"which"/"who" come il "che" italiano"""
+    if t.is_upper and len(t) > 1 and t.is_alpha:
+        return False
+    if t.pos_ == "ADP" and t.dep_ in ("prep", "agent", "dative"):
+        return True
+    if t.lower_ in ("that", "which", "who") and (t.pos_ == "SCONJ" or t.tag_ in ("WDT", "WP")):
+        return True
+    return (t.dep_ == "cc" or t.is_punct) and t.text != "/" and t.text not in VIRGOLETTE
+
+
 def legame(t):
     """parole che diventano parametro dell'arco: punteggiatura, congiunzioni, "che" relativo o subordinante"""
+    if t.doc.lang_ == "en":
+        return legame_en(t)
     if t.is_upper and len(t) > 1 and t.is_alpha:   # parola in maiuscolo = enfasi, resta engramma (es. {QUANDO})
         return False
     if t.lower_ == "come":   # "come" = parametro di somiglianza (≈), tranne nelle domande (11/10):
@@ -63,6 +131,9 @@ def legame(t):
 
 def proposizioni(sent):
     """teste di proposizione: la radice, ogni altro verbo (anche infinito: [imparano][dal leggere ...]) e i nomi coordinati"""
+    if sent.doc.lang_ == "en":   # in inglese la copula e' la testa ("is" ccomp): verbi e ausiliari che non fanno da aux
+        return [sent.root] + [t for t in sent if t is not sent.root and (
+            t.pos_ in ("VERB", "AUX") and t.dep_ not in ("aux", "auxpass") or (t.dep_ == "conj" and t.head.pos_ in ("NOUN", "PROPN") and t.pos_ in ("NOUN", "PROPN")))]
     return [sent.root] + [t for t in sent if t is not sent.root and (
         t.pos_ == "VERB" or any(c.dep_ == "cop" for c in t.children) or (t.dep_ == "conj" and t.head.pos_ in ("NOUN", "PROPN") and t.pos_ in ("NOUN", "PROPN")))]
 
@@ -98,7 +169,12 @@ def taglia(testo):
         k = _segnaposto(len(codici))
         codici[k] = m.group(0).strip("`").strip()
         return f" {k} "
-    pezzi = _taglia(CODICE.sub(via, testo))
+    t = CODICE.sub(via, testo)
+    blocchi = per_lingua(t)
+    if all(lg == "it" for lg, _ in blocchi):
+        pezzi = _taglia(t)   # come prima: un ricordo italiano si taglia intero
+    else:
+        pezzi = [p for lg, x in blocchi for p in _taglia(x, nlp_en() if lg == "en" else nlp)]
     if not codici:
         return pezzi
     rimetti = re.compile("|".join(sorted(codici, key=len, reverse=True)))
@@ -112,9 +188,9 @@ def taglia(testo):
     return out
 
 
-def _taglia(testo):
+def _taglia(testo, modello=None):
     out = []
-    for sent in nlp(FORMATO.sub("", testo)).sents:   # la formattazione si elimina (11/10)
+    for sent in (modello or nlp)(FORMATO.sub("", testo)).sents:   # la formattazione si elimina (11/10)
         teste = proposizioni(sent)
         padrone = {}
         for t in sent:   # ogni token va alla testa di proposizione piu' vicina risalendo l'albero
@@ -128,7 +204,7 @@ def _taglia(testo):
                     padrone[s.i] = ("S", t.i)
         prof = lambda t: len(list(t.ancestors))
         for t in sorted(sent, key=prof):   # complemento di un nome: dal piu' esterno al piu' interno
-            if any(c.dep_ == "case" for c in t.children) and t not in teste \
+            if any(c.dep_ == "case" for c in t.children) and t not in teste or t.dep_ == "pobj" and t not in teste \
                     or t.dep_ == "nmod" and t.head.pos_ in ("NOUN", "PROPN", "PRON") \
                     or t.pos_ == "PROPN" and t.head.pos_ in ("VERB", "AUX") and t.dep_ not in SOGG \
                     and not t.dep_.startswith(("flat", "compound")):   # [visitando][Parigi]

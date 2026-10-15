@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8">
+<script>/* 13/10 l'utente: il tema lo decide il pulsante della dashboard (localStorage "tema-dashboard", stessa origine :8095) */
+function temaDashboard(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x;else delete document.documentElement.dataset.theme}
+temaDashboard();addEventListener("storage",e=>{if(e.key==="tema-dashboard"){temaDashboard();if(typeof disegna==="function")disegna()}});</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riepilogo emozioni</title>
+<style>
+/* stile della dashboard (notturna-web.py); rampa sequenziale blu 100-700 per l'efficacia */
+:root{color-scheme:light;
+  --bg:#f4f3ef; --card:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
+  --bordo:#e6e5e0; --ok:#0b7a3a; --warn:#9a6200; --err:#c0362c; --accent:#2a78d6; --btn:#efeee9; --btn-bordo:#e6e5e0;
+  --vuoto:#efeee9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a;
+  --vuoto:#222220;
+}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
+  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5; --btn:#262624; --btn-bordo:#2d2d2a;
+  --vuoto:#222220;
+}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 60px}
+header,main{max-width:1100px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;margin-bottom:14px}
+header h1{font-size:22px;font-weight:700}
+header .ora{color:var(--muted)}
+header nav{margin-left:auto;display:flex;gap:6px}
+header nav a{background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);border-radius:8px;padding:5px 12px;text-decoration:none;font-size:14px}
+header nav a:hover{border-color:var(--accent)}
+section{background:var(--card);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.nota{font-size:12.5px;color:var(--ink2);margin-bottom:12px}
+.tab{display:grid;grid-template-columns:130px repeat(var(--n),minmax(0,1fr)) 84px;gap:4px 4px;align-items:center}
+.tab .t{font-size:11.5px;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums}
+.tab .e{font-size:13px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px}
+.tab .e a{color:inherit;text-decoration:none}.tab .e a:hover{color:var(--accent)}
+.b{position:relative;height:34px;border-radius:4px;background:var(--vuoto);overflow:hidden}
+.b .f{position:absolute;left:0;right:0;bottom:0;background:var(--pieno)}
+.b span{position:relative;display:flex;height:100%;align-items:center;justify-content:center;font-size:11px;
+  font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.b.parz{outline:1.5px dashed var(--muted);outline-offset:-1.5px}
+.b.no span{color:var(--muted);font-weight:400}
+.tab .d{font-size:12px;line-height:1.25;font-variant-numeric:tabular-nums;color:var(--ink2);text-align:right;cursor:default}
+.tab .d b{display:block;color:var(--ink);font-weight:600}
+@media (max-width:640px){.tab .d{font-size:9.5px}}
+.leg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink2);margin-top:12px}
+.leg i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-3px;margin-right:5px}
+@media (max-width:640px){
+  body{padding:14px 10px 40px} section{padding:12px 8px}
+  .tab{grid-template-columns:72px repeat(var(--n),minmax(0,1fr)) 52px;gap:3px 2px}
+  .tab .e{font-size:11px;padding-right:3px}
+  .tab .t{font-size:9px}
+  .b{height:28px;border-radius:3px}
+  .b span{font-size:8px}
+}
+</style>
+<style>:root{--pieno:#9ec5f4}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pieno:#1c5cab}}
+:root[data-theme="dark"]{--pieno:#1c5cab}</style>
+</head><body>
+<header><h1>📊 Riepilogo emozioni</h1><span class="ora" id="stato">…</span>
+<nav><a href="./" title="Pagina per contesto">🎭 Per contesto</a><a href="/" title="Torna alla dashboard">🏠 Home</a></nav></header>
+<main><section>
+<p class="nota">Ogni blocchetto è un contesto, da C0 (solo prompt di sistema) a C13 (~140k token). Si riempie dal basso
+con la quota dei 18 layer (L15-L32) dove il vettore ha almeno una dose efficace in quel contesto.
+In fondo alla riga, su tutti i layer efficaci di tutti i contesti: in alto la dose più efficace con la sua percentuale di punti efficaci, poi la mediana e ± la deviazione standard delle dosi migliori di ogni layer efficace.</p>
+<div class="tab" id="tab"></div>
+<div class="leg"><span><i style="background:var(--pieno)"></i>quota di layer efficaci</span>
+<span><i style="outline:1.5px dashed var(--muted);outline-offset:-1.5px"></i>contesto ancora in misura</span>
+<span><i style="background:var(--vuoto)"></i>non ancora misurato</span></div>
+</section></main>
+<script>
+// 15/10: emozioni in ordine alfabetico, un blocchetto per contesto riempito dal basso con la % di layer efficaci
+const $=id=>document.getElementById(id);let ultimo="";
+function carica(){fetch("dati.json",{cache:"no-store"}).then(r=>r.text()).then(t=>{const I=JSON.parse(t);
+  const c=I.in_corso;
+  $("stato").textContent=c?`in prova: C${c.k}${c.emo?" · "+(I.it[c.emo]||c.emo):""}`:"";
+  if(t===ultimo)return;ultimo=t;
+  const R=I.riepilogo||{},N=I.n_layer||18,ks=I.contesti.map(x=>x.k);
+  const nomi=Object.keys(I.it).sort((a,b)=>I.it[a].localeCompare(I.it[b],"it"));
+  const tab=$("tab");tab.style.setProperty("--n",ks.length);
+  let h='<div></div>'+ks.map(k=>`<div class="t" title="${I.contesti.find(x=>x.k===k).n_token.toLocaleString("it")} token">C${k}</div>`).join("")+'<div class="t">dose</div>';
+  for(const e of nomi){h+=`<div class="e" title="${I.it[e]}"><a href="./">${I.it[e]}</a></div>`;
+    for(const k of ks){const v=(R[e]||{})[k];
+      if(!v){h+=`<div class="b no" title="C${k}: non ancora misurato"><span>·</span></div>`;continue}
+      const p=Math.round(100*v[0]/N),parz=v[1]<N||(c&&c.k===k&&c.emo===e);
+      h+=`<div class="b${parz?" parz":""}" title="${I.it[e]} · C${k}: ${v[0]} layer efficaci su ${N}${v[1]<N?" ("+v[1]+" misurati finora)":""}${v[2]!=null?" · dose migliore "+v[2]+" a L"+v[3]:""}"><div class="f" style="height:${p}%"></div><span>${p}%</span></div>`}
+    // 15/10: deviazione standard (della popolazione) delle dosi migliori di ogni layer efficace, su tutti i
+    // layer e tutti i contesti, in tempo reale
+    const dd=ks.flatMap(k=>((R[e]||{})[k]||[])[4]||[]);
+    // 15/10: dose piu' efficace in percentuale (sui punti misurati a quella dose, in tutti i layer e i contesti;
+    // contano solo le dosi misurate almeno un quarto delle volte della dose piu' misurata), mediana e deviazione standard
+    // delle dosi migliori di ogni layer efficace
+    if(dd.length>1){const m=dd.reduce((a,b)=>a+b,0)/dd.length,sd=Math.sqrt(dd.reduce((a,b)=>a+(b-m)**2,0)/dd.length);
+      const o=[...dd].sort((a,b)=>a-b),med=o.length%2?o[(o.length-1)/2]:(o[o.length/2-1]+o[o.length/2])/2;
+      const P=Object.entries((I.dosi||{})[e]||{}),mx=Math.max(...P.map(([,v])=>v[1]));
+      const [bd,bv]=P.filter(([,v])=>v[1]>=mx/4).sort((a,b)=>b[1][0]/b[1][1]-a[1][0]/a[1][1]||a[0]-b[0])[0]||[];
+      const pc=bv?Math.round(100*bv[0]/bv[1]):0;
+      h+=`<div class="d" title="dose più efficace ${bd}: efficace in ${bv?bv[0]:0} punti su ${bv?bv[1]:0} misurati (tutti i layer e i contesti) · mediana ${med.toFixed(3)} e deviazione su ${dd.length} coppie layer-contesto · media ${m.toFixed(3)}"><b>${bd} · ${pc}%</b>med ${med.toFixed(2)}<br>±${sd.toFixed(3)}</div>`}
+    else h+=`<div class="d" title="servono almeno 2 layer con una dose efficace">–</div>`}
+  tab.innerHTML=h}).catch(()=>{})}
+carica();setInterval(carica,3000);
+</script>
+</body></html>

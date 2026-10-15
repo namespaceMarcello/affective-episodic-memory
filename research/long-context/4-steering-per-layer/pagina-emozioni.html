@@ -1,5 +1,8 @@
 <!doctype html>
 <html lang="it"><head><meta charset="utf-8">
+<script>/* 13/10 l'utente: il tema lo decide il pulsante della dashboard (localStorage "tema-dashboard", stessa origine :8095) */
+function temaDashboard(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x;else delete document.documentElement.dataset.theme}
+temaDashboard();addEventListener("storage",e=>{if(e.key==="tema-dashboard"){temaDashboard();if(typeof disegna==="function")disegna()}});</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Emozioni per layer</title>
 <style>
@@ -45,14 +48,16 @@ button{background:var(--btn);border:1px solid var(--btn-bordo);color:var(--ink);
 button:hover,button.on{border-color:var(--accent)}
 button small{color:var(--muted);font-variant-numeric:tabular-nums;margin-left:4px}
 .tema{background:none;border:1px solid var(--bordo);border-radius:50%;width:32px;height:32px;padding:0;color:var(--ink)}
+#tip .tk{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-top:6px}
+#tip mark{background:rgba(234,170,0,.38);color:inherit;border-radius:2px;padding:0 1px}
 #tip{position:fixed;pointer-events:none;background:var(--card);color:var(--ink);border:1px solid var(--bordo);border-radius:8px;
-  padding:7px 10px;font-size:12px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none;z-index:9;max-width:260px}
+  padding:7px 10px;font-size:12px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,.2);display:none;z-index:9;max-width:min(420px,90vw);max-height:calc(100vh - 16px);overflow:hidden}
 #scheda{display:none}
 table{border-collapse:collapse;font:12.5px/1.5 ui-monospace,monospace;font-variant-numeric:tabular-nums;width:100%}
 th{text-align:left;color:var(--muted);font-weight:500;padding:2px 8px 3px 0}
 td{padding:2px 8px 2px 0;color:var(--ink2)}
 tr.best td{color:var(--ink);font-weight:600}
-td.ef{color:var(--ok);font-weight:600} td.ro{color:var(--err)} td.pa{color:var(--warn)}
+td.cel{cursor:pointer} th.lb{color:var(--ink);font-weight:700} td.ef{color:var(--ok);font-weight:600} td.ro{color:var(--err)} td.pa{color:var(--warn)}
 .tabwrap{overflow-x:auto;margin-top:8px}
 @media (max-width:640px){
   body{padding:14px 10px 40px}
@@ -60,7 +65,7 @@ td.ef{color:var(--ok);font-weight:600} td.ro{color:var(--err)} td.pa{color:var(-
   .griglia{grid-template-columns:74px repeat(18,minmax(0,1fr));gap:1px}
   .griglia .n{font-size:10.5px;padding-right:3px}
   .griglia .t{font-size:8.5px}
-  .griglia .t:nth-child(odd){visibility:hidden}
+  .griglia .t .pre{display:none}   /* 13/10: al telefono tutti i layer, da 15 a 32, senza la L */
   .griglia .c{height:13px;border-radius:2px}
   table{font-size:11px}
   th,td{padding-right:5px}
@@ -79,12 +84,17 @@ td.ef{color:var(--ok);font-weight:600} td.ro{color:var(--err)} td.pa{color:var(-
 (function(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x})();
 </script>
 </head><body>
-<header><h1>🎭 Emozioni per layer</h1><span class="ora" id="stato">…</span><a class="home" href="/" title="Torna alla dashboard">🏠 Home</a></header>
+<header><h1>🎭 Emozioni per layer</h1><span class="ora" id="stato">…</span><a class="home" href="riepilogo.html" title="Riepilogo di tutti i contesti">📊 Riepilogo</a><a class="home" style="margin-left:0" href="/" title="Torna alla dashboard">🏠 Home</a></header>
 <main>
 <section>
+<h2>Contesto</h2>
+<p class="nota">Ogni contesto ha la sua pagina coi suoi soli dati. Il pallino marca quello in prova adesso.</p>
+<div class="bottoni" id="contesti"></div>
+</section>
+<section>
 <h2>Efficacia di ogni emozione su ogni layer</h2>
-<p class="nota">Colore = quota dei contesti (da solo prompt di sistema fino a ~140k token, temi diversi) in cui almeno una dose
-porta l'emozione giusta fra le prime 3 delle 51, con testo pulito. Il riquadro marca il layer migliore. Passa sopra una cella per i dettagli.</p>
+<p class="nota">Colore pieno = nel contesto scelto almeno una dose
+porta l'emozione giusta fra le prime 4 delle 51, con testo pulito. Il riquadro marca il layer migliore. Passa sopra una cella per i dettagli.</p>
 <div class="mappa"><div class="griglia" id="griglia"></div></div>
 <div class="legenda">0%<span class="scala" id="scala"></span>100%<span style="margin-left:12px">grigio = non ancora misurato</span></div>
 </section>
@@ -105,13 +115,16 @@ let D,ordine=[],aperta=null;
 const it=e=>(D&&D.it&&D.it[e])||e;
 const $=id=>document.getElementById(id), tip=$("tip");
 function mostraTip(ev,html){tip.innerHTML=html;tip.style.display="block";
-  const x=Math.min(ev.clientX+14,innerWidth-270),y=ev.clientY+14;tip.style.left=x+"px";tip.style.top=y+"px"}
+  // 15/10: il riquadro resta dentro lo schermo; se sotto il dito non c'e' posto va sopra
+  const x=Math.max(4,Math.min(ev.clientX+14,innerWidth-tip.offsetWidth-8)),h=tip.offsetHeight;
+  let y=ev.clientY+14;if(y+h>innerHeight-8)y=ev.clientY-h-14;y=Math.max(4,Math.min(y,innerHeight-h-8));
+  tip.style.left=x+"px";tip.style.top=y+"px"}
 function nascondiTip(){tip.style.display="none"}
 function evidenzia(e){const g=$("griglia");g.classList.toggle("fuoco",!!e);
   g.querySelectorAll("[data-e]").forEach(el=>{el.classList.toggle("riga-off",!!e&&el.dataset.e!==e);
     if(el.classList.contains("n"))el.classList.toggle("on",el.dataset.e===e)})}
 function disegna(){
-  const g=$("griglia");g.innerHTML='<div></div>'+D.layer.map(L=>`<div class="t">L${L}</div>`).join("");
+  const g=$("griglia");g.innerHTML='<div></div>'+D.layer.map(L=>`<div class="t"><span class="pre">L</span>${L}</div>`).join("");
   for(const e of ordine){const x=D.emozioni[e];
     g.insertAdjacentHTML("beforeend",`<div class="n" data-e="${e}" title="${it(e)}">${it(e)}</div>`);
     for(const L of D.layer){const v=x.layer[L];
@@ -128,43 +141,77 @@ function disegna(){
   $("bottoni").querySelectorAll("button").forEach(b=>{b.onmouseenter=()=>evidenzia(b.dataset.e);
     b.onmouseleave=()=>evidenzia(aperta);b.onclick=()=>apri(b.dataset.e)});
   evidenzia(aperta)}
-function cella(c){if(!c)return '<td>·</td>';
+// 13/10: al passaggio (o tocco) sulla cella, finestrella con layer, dose, contesto e testo intero
+const CELLE=[];
+function cella(c,k){if(!c)return '<td>·</td>';
   const cls=c.efficace?"ef":c.rotto?"ro":c.parola?"pa":"";
   const t=c.rotto?"rotto":!c.cambiato?"=":(c.rango??"–")+(c.parola?" P":"");
-  return `<td class="${cls}" title="${(c.testo||"").replace(/"/g,"&quot;")}">${t}</td>`}
+  CELLE.push({...c,k});
+  return `<td class="${cls} cel" data-i="${CELLE.length-1}">${t}</td>`}
+function tipCella(ev){const td=ev.target.closest("td.cel");if(!td){nascondiTip();return}
+  const c=CELLE[+td.dataset.i],esc=s=>(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  // 15/10: esito della tool call del punto
+  const tc=c.tool_presente==null?"":c.tool?' · <span class="ef">tool call valida</span>':c.tool_presente?` · <span class="ro">tool call rotta${c.tool_errore?": "+esc(c.tool_errore):""}</span>`:' · <span class="pa">nessuna tool call</span>';
+  mostraTip(ev,`<b>L${c.layer} · dose ${c.dose}</b> · ${c.k.toLocaleString("it")} token · rango ${c.rango??"–"} · eco ${c.eco}${tc}`+
+    (D.base!=null?`<div class="tk">senza vettore</div>${esc(D.base)}<div class="tk">con vettore</div>${differenze(D.base,c.testo,esc)}`:`<br>${esc(c.testo)}`))}
+// 15/10: nel testo col vettore si evidenziano le parole che non stanno nel testo senza (sottosequenza comune piu' lunga)
+function differenze(a,b,esc){const A=a.split(/\s+/).filter(Boolean),P=b.split(/(\s+)/),B=P.filter((x,i)=>i%2===0&&x);
+  const n=A.length,m=B.length,L=Array.from({length:n+1},()=>new Uint16Array(m+1));
+  for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+  const uguale=new Set();for(let i=0,j=0;i<n&&j<m;){if(A[i]===B[j]){uguale.add(j);i++;j++}else if(L[i+1][j]>=L[i][j+1])i++;else j++}
+  let j=0;return P.map((x,i)=>{if(i%2||!x)return esc(x);const k=j++;return uguale.has(k)?esc(x):`<mark>${esc(x)}</mark>`}).join("")}
 function chiudi(){aperta=null;$("scheda").style.display="none";
   document.querySelectorAll("#bottoni button").forEach(t=>t.classList.remove("on"));evidenzia(null)}
 document.addEventListener("click",ev=>{if(!aperta)return;
   if(ev.target.closest("#bottoni button, .griglia .c, .griglia .n, #scheda"))return;chiudi()});
 function apri(e){aperta=e;const x=D.emozioni[e],Lb=x.migliore,b=x.layer[Lb];
   document.querySelectorAll("#bottoni button").forEach(t=>t.classList.toggle("on",t.dataset.e===e));evidenzia(e);
-  const righe=Object.entries(x.layer).map(([L,v])=>`<tr class="${+L===Lb?"best":""}"><td>L${L}</td><td>${pc(v.efficacia)}</td><td>${v.dose??"–"}</td><td>${v.dev??"–"}</td><td>${v.da??"–"}–${v.a??"–"}</td><td>${v.eco??"–"}</td><td>${v.rotto_da??"–"}</td></tr>`).join("");
-  let fin="";
+  const righe=D.layer.filter(L=>x.layer[L]).map(L=>[L,x.layer[L]]).map(([L,v])=>`<tr class="${+L===Lb?"best":""}"><td>L${L}</td><td>${pc(v.efficacia)}</td><td>${v.dose??"–"}</td><td>${v.dev??"–"}</td><td>${v.da??"–"}–${v.a??"–"}</td><td>${v.eco??"–"}</td><td>${v.rotto_da??"–"}</td></tr>`).join("");
+  CELLE.length=0;
+  let fin=x.per_contesto?`<h2 style="margin-top:16px">Tutti i layer, contesto per contesto</h2>
+    <p class="nota">Ogni colonna è un layer, ognuno alla sua intensità (senza dosi efficaci: la dose col rango migliore). Rango della faccia giusta fra le 51. Passa sopra o tocca per leggere il testo.</p>
+    <div class="tabwrap"><table><tr><th>token</th>${D.layer.map(L=>`<th class="${L===Lb?"lb":""}">L${L}</th>`).join("")}</tr>
+    ${x.per_contesto.map(f=>`<tr><td>${f.n_token.toLocaleString("it")}</td>${f.celle.map(c=>cella(c,f.n_token)).join("")}</tr>`).join("")}</table></div>`:"";
   if(x.finestra.length&&b.dose!=null){const dosi=[...Array(11)].map((_,i)=>(b.dose+0.02*(i-5)).toFixed(2));
-    fin=`<h2 style="margin-top:16px">L${Lb}: intensità ${b.dose} ± 0.10, contesto per contesto</h2>
-    <p class="nota">Rango della faccia giusta fra le 51 (1 = la più forte). Verde = efficace, arancio P = parola dell'emozione nel testo, rosso = testo rotto, "=" = testo uguale alla base. Passa sopra per leggere il testo.</p>
-    <div class="tabwrap"><table><tr><th>token</th>${dosi.map(d=>`<th>${d}</th>`).join("")}</tr>
-    ${x.finestra.map(f=>`<tr><td>${f.n_token.toLocaleString("it")}</td>${f.celle.map(cella).join("")}</tr>`).join("")}</table></div>`}
+    fin+=`<h2 style="margin-top:16px">Solo L${Lb}, dosi da ${(b.dose-0.1).toFixed(2)} a ${(b.dose+0.1).toFixed(2)}, contesto per contesto</h2>
+    <p class="nota">Ogni colonna è una DOSE, tutte sul layer L${Lb}: la colonna ${b.dose} è la stessa cella L${Lb} della tabella sopra. Rango della faccia giusta fra le 51 (1 = la più forte). Verde = efficace, arancio P = parola dell'emozione nel testo, rosso = testo rotto, "=" = testo uguale alla base. Passa sopra per leggere il testo.</p>
+    <div class="tabwrap"><table><tr><th>token / dose</th>${dosi.map(d=>`<th>${d}</th>`).join("")}</tr>
+    ${x.finestra.map(f=>`<tr><td>${f.n_token.toLocaleString("it")}</td>${f.celle.map(c=>cella(c&&{...c,layer:Lb},f.n_token)).join("")}</tr>`).join("")}</table></div>`}
   const esc=t=>(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
   if(x.confronto&&x.confronto.length){
     fin+=`<h2 style="margin-top:16px">Con e senza vettore, per lunghezza di contesto</h2>
-    <p class="nota">L${Lb} all'intensità ${b.dose} (o l'ultima dose misurata sotto, se la serie si è fermata prima). Inizio della risposta dell'agente, 64 token.</p>
-    ${x.confronto.map(c=>`<div class="conf"><div class="conf-t">${c.n_token.toLocaleString("it")} token · dose ${c.dose} · ${c.rotto?'<span class="ro">rotto</span>':c.parola?'<span class="pa">parola</span>':c.efficace?'<span class="ef">efficace</span>':"rango "+(c.rango??"–")}</div>
+    <p class="nota">L${Lb} all'intensità ${b.dose} (o l'ultima dose misurata sotto, se la serie si è fermata prima). Risposta intera dell'agente fino alla fine, generata a fine di ogni contesto col layer e la dose migliori di quel momento; dove non c'è ancora, i primi 64 token misurati.</p>
+    ${x.confronto.map(c=>`<div class="conf"><div class="conf-t">${c.n_token.toLocaleString("it")} token · ${c.intero?`risposta intera · L${c.layer_intero} · `:"primi 64 token · "}dose ${c.dose} · ${c.rotto?'<span class="ro">rotto</span>':c.parola?'<span class="pa">parola</span>':c.efficace?'<span class="ef">efficace</span>':"rango "+(c.rango??"–")}</div>
       <div class="conf-g"><div><div class="conf-k">senza</div>${c.senza?esc(c.senza):'<span class="vuoto">base non registrata</span>'}</div><div><div class="conf-k">con</div>${esc(c.con)}</div></div></div>`).join("")}`}
   $("scheda").style.display="block";
   $("scheda").innerHTML=`<h2>${it(e)}</h2><div class="grande">L${Lb}<small>efficace in ${pc(b.efficacia)} dei contesti · intensità ${b.dose??"–"}${b.dev!=null?" (dev. std "+b.dev+")":""} · range ${b.da??"–"}–${b.a??"–"}</small></div>
   <div class="tabwrap"><table><tr><th>layer</th><th>efficacia</th><th>intensità</th><th>dev. std</th><th>range efficace</th><th>eco</th><th>rotto da</th></tr>${righe}</table></div>${fin}`;
-  $("scheda").scrollIntoView({behavior:"smooth",block:"start"})}
-let primo=true;
-function carica(){fetch("dati.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{D=d;
+  const s=$("scheda");s.onmousemove=tipCella;s.onmouseleave=nascondiTip;s.onclick=tipCella;
+  s.scrollIntoView({behavior:"smooth",block:"start"})}
+let primo=true,sel=null,I=null;
+// 15/10: pulsanti C0 C1 ... in alto; dati.json = indice, dati-c<k>.json = dati del contesto k
+function pulsanti(){const c=I.in_corso;
+  $("contesti").innerHTML=I.disponibili.map(k=>{const x=I.contesti.find(z=>z.k===k);
+    return `<button data-k="${k}" class="${k===sel?"on":""}" title="${x?x.n_token.toLocaleString("it")+" token":""}">C${k}${c&&c.k===k?" ●":""}</button>`}).join("");
+  $("contesti").querySelectorAll("button").forEach(b=>{b.onclick=()=>{sel=+b.dataset.k;ultimo="";chiudi();pulsanti();carica()}})}
+// 15/10: una risposta arrivata dopo un clic su un altro contesto si scarta (prima faceva sfarfallare
+// verso il contesto vecchio); se i dati non sono cambiati la pagina non si ridisegna
+let giro=0,ultimo="";
+function carica(){const g=++giro;fetch("dati.json",{cache:"no-store"}).then(r=>r.json()).then(i=>{if(g!==giro)throw 0;I=i;
+  if(sel==null||!I.disponibili.includes(sel))sel=I.in_corso?I.in_corso.k:I.disponibili[I.disponibili.length-1];
+  pulsanti();return fetch(`dati-c${sel}.json`,{cache:"no-store"})}).then(r=>r.text()).then(t=>{
+  if(g!==giro)throw 0;const d=JSON.parse(t);if(d.k!==sel)throw 0;
+  const c=d.in_corso;
+  const nuovo=JSON.stringify(d.emozioni),cambiato=nuovo!==ultimo;ultimo=nuovo;D=d;
+  const n=Object.keys(D.emozioni).length;
+  const xs=D.contesti.find(z=>z.k===D.k);
+  $("stato").textContent=(c?`in prova: C${c.k} (${c.n_token.toLocaleString("it")} token)${c.emo?" · "+it(c.emo):""}${c.layer!=null?" · L"+c.layer:""} · `:"")+
+    `C${D.k}${xs?" ("+xs.n_token.toLocaleString("it")+" token)":""}: ${n}/51 emozioni`;
+  if(!cambiato)return;
   const sc=e=>{const x=D.emozioni[e],b=x.layer[x.migliore];return b.efficacia*10+(b.eco||0)};
   ordine=Object.keys(D.emozioni).sort((a,b)=>sc(b)-sc(a));
-  const n=Object.keys(D.emozioni).length;
-  const c=D.in_corso;
-  $("stato").textContent=(c?`in prova: contesto ${c.k} (${c.n_token.toLocaleString("it")} token) · ${it(c.emo)} · L${c.layer} · `:"")+
-    `${n}/51 emozioni · ${D.contesti.length} contesti fino a ${Math.max(...D.contesti.map(c=>c.n_token)).toLocaleString("it")} token`;
   disegna();if(primo){primo=false;matchMedia("(prefers-color-scheme: dark)").addEventListener("change",disegna)}})
  .catch(()=>{if(primo)$("stato").textContent="dati non ancora disponibili"})}
-carica();setInterval(carica,60000);   // 12/10: si aggiorna da sola ogni minuto
+carica();setInterval(carica,2000);   // 12/10: in tempo reale, ogni 2 s come /vettori/ (prima ogni minuto)
 </script>
 </body></html>

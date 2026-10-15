@@ -23,7 +23,8 @@ COL = {e["en"]: e["colore"] for e in json.load(open("/data/memoria-episodica-aff
 
 
 def dati():
-    V = L.V - L.V.mean(0)
+    V = L.V.astype(np.float32)   # 1.7.0: i vettori del Lux sono float16, linalg vuole float32
+    V = V - V.mean(0)
     _, _, Vt = np.linalg.svd(V[::7], full_matrices=False)   # ponytail: PCA su un campione, basta per 3 assi
     P = V @ Vt[:3].T
     P = P / P.std(0) * 120
@@ -52,7 +53,7 @@ def cerca(q, quanti=20):
     q = q.strip()
     if not q:
         return []
-    s = (X.embed([q]) @ L.V.T)[0]
+    s = X.coseni(X.embed([q]), L.V)[0]
     k = X.chiave(q)
     for i, t in enumerate(L.testi):   # stesso testo o parola contenuta: in cima
         if X.chiave(t) == k:

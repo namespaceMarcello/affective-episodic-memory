@@ -27,14 +27,20 @@ import lux as LUX   # solo le funzioni FSRS e l'orologio vissuto (lettura): il L
 # VERSIONE MAJOR.MINOR.PATCH (11/10): MAJOR = formato dei dati incompatibile (lo stato dei rinforzi non si
 # porta), MINOR = ricostruzione con regole nuove (taglio, vettori) o funzione nuova, PATCH = correzione che non
 # cambia i dati. Ogni versione ha la sua cartella: le vecchie restano.
-VERSIONE = "1.5.0"   # 1.3.0: codice dei ricordi; 1.4.0: vettori L29 degli engrammi (lux-l29.npz); 1.5.0: aggiungi()
+VERSIONE = "1.7.0"   # 1.3.0: codice dei ricordi; 1.4.0: vettori L29 degli engrammi (lux-l29.npz); 1.5.0: aggiungi();
+# 1.6.0 (15/10): vettori bge-m3 in float16 su disco e in RAM (misurato sul Lux dell'agente: scarto coseni max 1.4e-4,
+# richiamo identico su 94/94 indizi); il coseno si calcola a blocchi riportati in float32
+# 1.7.0 (15/10): taglio per lingua (taglia.py: le frasi inglesi sicure vanno a en_core_web_lg); costruisci()
+# riusa i vettori degli engrammi gia' presenti nella versione PRECEDENTE (stesso testo = stesso vettore)
 DIR = f"/data/memoria-episodica-affettiva/engrammi/lux-{VERSIONE}"
+PRECEDENTE = "/data/memoria-episodica-affettiva/engrammi/lux-1.6.0"   # da qui costruisci() riprende i vettori gia' calcolati
 NPZ, META, STATO = f"{DIR}/lux.npz", f"{DIR}/lux-meta.json", f"{DIR}/lux-stato.npz"
 CRESCITA_PIENA = 100.0   # S/S0 a cui la facilita' tocca il tetto
 FACILITA_MAX = 2.0   # tetto: un ricordo richiamato spesso arriva alla soglia con un indizio fino a 2x piu' debole
 EMOZIONI = [e["en"] for e in json.load(open("/data/memoria-episodica-affettiva/emozioni.json"))]   # ordine fisso dei 51 assi
 EMBEDDER = "http://127.0.0.1:8094/v1/embeddings"
 SOGLIA_RICHIAMO = 0.2   # sotto: nessun ricordo, nessun turno del tool (taratura_soglia.py, 11/10: negativi max 0.177, positivi giusti min 0.268)
+VTIPO = np.float16   # 1.6.0
 SOGLIA_SEM = 0.8     # coseno minimo perche' un engramma del messaggio ne accenda uno del Lux
 INVERSO = {}
 for _k, _v in T.PREPOSIZIONI.items():   # forma canonica: la prima della tabella (di, non d'; a, non ad; tra, non fra)
@@ -61,6 +67,11 @@ def embed(testi):
         out += [d["embedding"] for d in json.load(urllib.request.urlopen(r, timeout=600))["data"]]
     v = np.asarray(out, np.float32)
     return v / (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
+
+
+def coseni(Q, V, blocco=65536):
+    """Q (float32) contro V (float16): a blocchi di righe riportati in float32, la RAM resta quella del float16"""
+    return np.concatenate([Q @ V[i:i + blocco].astype(np.float32).T for i in range(0, len(V), blocco)], axis=1)
 
 
 def param_id(testo, tab):
@@ -118,7 +129,18 @@ def costruisci():
     eid, testi, firme_e, tab, A, par_lista, ricordi = {}, [], [], {}, [], [], {}
     _inserisci(righe, eid, testi, firme_e, tab, A, par_lista, ricordi)
     print(f"{len(righe)} ricordi -> {len(testi)} engrammi unici, {len(A)} archi, {len(tab)} parametri non preposizione", flush=True)
-    V = embed(testi)
+    V = np.zeros((len(testi), 1024), VTIPO)
+    vecchi = {}
+    if os.path.exists(f"{PRECEDENTE}/lux.npz"):
+        zp, mp = np.load(f"{PRECEDENTE}/lux.npz"), json.load(open(f"{PRECEDENTE}/lux-meta.json"))
+        vecchi = {t: j for j, t in enumerate(mp["engrammi"])}
+        for i, t in enumerate(testi):
+            if t in vecchi:
+                V[i] = zp["V"][vecchi[t]]
+    nuovi = [i for i, t in enumerate(testi) if t not in vecchi]
+    print(f"vettori: {len(testi) - len(nuovi)} ripresi da {PRECEDENTE}, {len(nuovi)} da calcolare", flush=True)
+    if nuovi:
+        V[nuovi] = embed([testi[i] for i in nuovi]).astype(VTIPO)
     F = np.stack([np.mean(x, 0) if x else np.zeros(51, np.float32) for x in firme_e])
     A = np.asarray(A, np.int64)
     np.savez(NPZ, V=V, F=F, A=A, P=np.asarray(par_lista, np.int32))
@@ -148,7 +170,7 @@ def aggiungi():
     A, par_lista = [], list(z["P"])
     _inserisci(righe, eid, testi, firme_e, tab, A, par_lista, ricordi)
     nuovi = testi[n_e:]
-    V = np.concatenate([z["V"], embed(nuovi)]) if nuovi else z["V"]
+    V = np.concatenate([z["V"].astype(VTIPO), embed(nuovi).astype(VTIPO)]) if nuovi else z["V"].astype(VTIPO)
     F = np.concatenate([z["F"], np.stack([np.mean(x, 0) if x else np.zeros(51, np.float32) for x in firme_e[n_e:]])]) if nuovi else z["F"]
     A = np.concatenate([z["A"], np.asarray(A, np.int64).reshape(-1, 6)])
     if os.path.exists(STATO):   # archi nuovi: stabilita' iniziale dalla firma del ricordo, nati oggi (vissuto)
@@ -171,7 +193,7 @@ def aggiungi():
 class Lux:
     def __init__(self):
         z = np.load(NPZ)
-        self.V, self.F, self.A, self.P = z["V"], z["F"], z["A"], z["P"]
+        self.V, self.F, self.A, self.P = z["V"].astype(VTIPO, copy=False), z["F"], z["A"], z["P"]
         m = json.load(open(META))
         self.testi, self.altri, self.ricordi = m["engrammi"], m["altri_parametri"], {int(k): v for k, v in m["ricordi"].items()}
         self.chiavi = {chiave(t): i for i, t in enumerate(self.testi)}
@@ -278,7 +300,7 @@ class Lux:
             i = self.chiavi.get(chiave(t))
             if i is not None:
                 att[i] = 1.0
-        S = embed(nodi) @ self.V.T
+        S = coseni(embed(nodi), self.V)
         for row in S:
             for i in np.where(row >= SOGLIA_SEM)[0]:
                 att[int(i)] = max(att.get(int(i), 0), float((row[i] - SOGLIA_SEM) / (1 - SOGLIA_SEM)))

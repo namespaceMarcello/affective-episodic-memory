@@ -1,0 +1,11 @@
+{
+ "articoli": 500,
+ "engrammi": 76211,
+ "archi": 151341,
+ "parametri": 129863,
+ "wikilux.npz": 7784310,
+ "wikilux-meta.json": 1683705,
+ "vettori_bge_m3_float32": 312160256,
+ "sqlite_fts5": 4472832,
+ "testo_utf8": 2523122
+}

@@ -295,24 +295,25 @@ PAGINA = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard dell'agente</title>
 <style>
-/* 11/10: stile grafico della vecchia dashboard di addestramento (dismessa), stessi colori e stesso tema sole/luna */
+/* 11/10: stile grafico della vecchia dashboard di addestramento (dismessa), stessi colori e stesso tema sole/luna.
+   13/10: niente verde, arancio, giallo: gli stati usano la rampa blu della pagina emozioni (rosso solo per gli errori) */
 :root{color-scheme:light;
   --bg:#f4f3ef; --card:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
-  --bordo:#e6e5e0; --ok:#0b7a3a; --warn:#9a6200; --err:#c0362c; --accent:#2a78d6;
+  --bordo:#e6e5e0; --ok:#1c5cab; --warn:#5598e7; --err:#c0362c; --accent:#2a78d6;
   --barra-fondo:#efeee9; --btn:#efeee9; --btn-bordo:#e6e5e0;
-  --ric:#0e7a86; --ok-soft:#cfe8d2;
+  --ric:#3987e5; --ok-soft:#cde2fb;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
   --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
-  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5;
+  --bordo:#2d2d2a; --ok:#6da7ec; --warn:#cde2fb; --err:#ea6b60; --accent:#3987e5;
   --barra-fondo:#262624; --btn:#262624; --btn-bordo:#2d2d2a;
-  --ric:#4cc4d4; --ok-soft:#23432a;
+  --ric:#9ec5f4; --ok-soft:#104281;
 }}
 :root[data-theme="dark"]{color-scheme:dark;
   --bg:#111110; --card:#1a1a19; --ink:#f4f4f2; --ink2:#c3c2b7; --muted:#8f8e86;
-  --bordo:#2d2d2a; --ok:#3fb56e; --warn:#d9a13a; --err:#ea6b60; --accent:#3987e5;
+  --bordo:#2d2d2a; --ok:#6da7ec; --warn:#cde2fb; --err:#ea6b60; --accent:#3987e5;
   --barra-fondo:#262624; --btn:#262624; --btn-bordo:#2d2d2a;
-  --ric:#4cc4d4; --ok-soft:#23432a;
+  --ric:#9ec5f4; --ok-soft:#104281;
 }
 *{box-sizing:border-box;margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px 16px 60px}
@@ -423,7 +424,7 @@ document.addEventListener("DOMContentLoaded",disegnaTema);
   </div>
   <div id="kv-manovre"></div>
   <div id="esito"></div>
-  <div class="avviso">⚠ le mosse che toccano lo slot (VRAM) chiedono conferma: il server
+  <div class="avviso">⚠︎ le mosse che toccano lo slot (VRAM) chiedono conferma: il server
   non sa quale flusso è nello slot in questo momento, lo sai tu. Rifiutate da sole se un
   turno è in volo.</div>
 </section>
@@ -455,7 +456,9 @@ const CONFERME={vram_ram:"Salvo lo SLOT VIVO in RAM come «F»? Sovrascrive la c
   ssd_ram:"Riporto «F» da SSD in RAM? La copia RAM (che può essere più fresca) viene sovrascritta."};
 // 25/07: le finestre dell'agente vivono sulla 8096, stesso host da cui arriva questa
 // pagina (così vale anche se la dashboard è aperta con un altro nome host).
-function finestra(p){location.href=location.protocol+"//"+location.hostname+":8096"+p;}
+function finestra(p){   // 13/10 l'utente: il tema passa anche a stream e diario (altra porta, niente localStorage in comune)
+  let x="";try{x=localStorage.getItem("tema-dashboard")||""}catch(e){}
+  location.href=location.protocol+"//"+location.hostname+":8096"+p+(x?"#tema="+x:"");}
 async function fai(op,nome){
   const c=CONFERME[op]; if(c && !confirm(c.replaceAll("F",nome))) return;
   $("esito").textContent="… in corso ("+op.replace("_"," → ")+" "+(nome||"")+")";
@@ -548,7 +551,7 @@ let busyVisto=0, ultimoSlot=0;
 async function giro(){
   let d;
   try{ d=await (await fetch("dati.json")).json(); }
-  catch(e){ $("ora").textContent="⚠ dashboard non raggiungibile"; $("ora").className="stato-err"; return; }
+  catch(e){ $("ora").textContent="⚠︎ dashboard non raggiungibile"; $("ora").className="stato-err"; return; }
   $("ora").className="ora";
   $("ora").textContent=d.ora;
   $("h-notturna").innerHTML = d.ore_da_notturna==null ? "" :
@@ -606,6 +609,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Cache-Control", "no-store")   # 13/10: il telefono teneva la pagina vecchia
         self.end_headers()
         self.wfile.write(corpo)
 

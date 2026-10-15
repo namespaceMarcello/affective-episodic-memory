@@ -1,5 +1,8 @@
 <!doctype html>
 <html lang="it"><head><meta charset="utf-8">
+<script>/* 13/10 l'utente: il tema lo decide il pulsante della dashboard (localStorage "tema-dashboard", stessa origine :8095) */
+function temaDashboard(){let x=null;try{x=localStorage.getItem("tema-dashboard")}catch(e){}if(x==="light"||x==="dark")document.documentElement.dataset.theme=x;else delete document.documentElement.dataset.theme}
+temaDashboard();addEventListener("storage",e=>{if(e.key==="tema-dashboard"){temaDashboard();if(typeof disegna==="function")disegna()}});</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vettori emotivi</title>
 <style>
