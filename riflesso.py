@@ -81,6 +81,17 @@ CONSEGNE = Path("/data/workspace/memoria/consegne-memorinvolontaria.json")
 CONSEGNE_MAX = 50       # conversazioni ricordate (le più recenti)
 _consegne_lock = threading.Lock()
 
+# ---- ORA DEI MESSAGGI (16/10): un messaggio dell'utente ogni 5 porta davanti
+# l'ora VERA del suo arrivo, [d/m/aaaa|h:mm]. L'ora si fissa quando il messaggio
+# arriva e si ricorda (come le consegne): a ogni richiesta lo stesso testo, così
+# il prefisso della cache resta stabile. I messaggi già nella conversazione prima
+# che il riflesso li vedesse contano nella cadenza ma restano senza ora.
+ORE = Path("/data/workspace/memoria/ore-messaggi.json")
+MIO = "[utente]"        # prefisso del bridge Matrix sui messaggi dell'utente
+OGNI = 5
+_ore_lock = threading.Lock()
+_ORA = re.compile(r"^\[\d{1,2}/\d{1,2}/\d{4}\|\d{1,2}:\d{2}\] ")
+
 # --- specchio del KV (17/07, richiesta di progetto): l'istante sospeso dell'agente.
 # A fine di OGNI stream: salvataggio dello slot in RAM (/dev/shm, via
 # --slot-save-path del server). Ogni 5 messaggi: copia consolidata su SSD.
@@ -314,6 +325,47 @@ def _lux_consegna(testo, esclusi):
         return {}
 
 
+def _ora_corta(t):
+    return f"[{t.tm_mday}/{t.tm_mon}/{t.tm_year}|{t.tm_hour}:{t.tm_min:02d}]"
+
+
+def _metti_ore(msgs, adesso=None):
+    """davanti a un messaggio dell'utente ogni OGNI, l'ora del suo arrivo (in place)"""
+    conv = _conversazione(msgs)
+    suoi = [m for m in msgs if m.get("role") == "user" and isinstance(m.get("content"), str)
+            and m["content"].startswith(MIO)]
+    if not suoi:
+        return
+    with _ore_lock:
+        try:
+            tutte = json.loads(ORE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            tutte = {}
+        c = tutte.setdefault(conv, {"visti": [], "ore": {}})
+        visti = set(c["visti"])
+        nuovi = False
+        for m in suoi:
+            imp = _impronta(m["content"])
+            if imp in visti:
+                continue
+            visti.add(imp)
+            c["visti"].append(imp)
+            nuovi = True
+            # solo il messaggio che arriva adesso ha un'ora vera
+            if len(c["visti"]) % OGNI == 1 and m is suoi[-1] and msgs[-1] is m:
+                c["ore"][imp] = _ora_corta(time.localtime(adesso))
+        if nuovi:
+            c["ts"] = time.time()
+            vive = dict(sorted(tutte.items(), key=lambda kv: kv[1].get("ts", 0))[-CONSEGNE_MAX:])
+            tmp = ORE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(vive, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(ORE)
+    for m in suoi:
+        ora = c["ore"].get(_impronta(m["content"]))
+        if ora:
+            m["content"] = f"{ora} {m['content']}"
+
+
 def _cvec(payload):
     # issue #3 punto B: un errore del server NON vale come vettore spento
     st, _ = ponte.post("/control-vector", payload, timeout=30)
@@ -529,7 +581,8 @@ def _fonte_indice(msgs):
 def query_riflesso(testo):
     """Il testo su cui far affiorare i ricordi: la riga dell'appunto se siamo
     in un risveglio del pensatoio, altrimenti ciò che ha letto, ripulito."""
-    m = _MARCA_RISVEGLIO.search(testo or "")
+    testo = _ORA.sub("", testo or "")   # l'ora del messaggio non fa affiorare ricordi
+    m = _MARCA_RISVEGLIO.search(testo)
     if not m:
         return _leggibile(testo)
     riga = m.group(1)
@@ -714,21 +767,17 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                     _diario({"kill": "frase di emergenza detta in chat"})
             except Exception:
                 pass
-        # ORA ATTUALE (19/07, richiesta di progetto): l'agente vuole sapere che ora è
-        # a ogni messaggio. Iniettata in CODA (mai in testa: il prefisso della
-        # cache resta stabile) e mai salvata nella storia: è del momento.
+        # 16/10, l'utente: niente più ora a ogni messaggio ("[adesso sono le ...]",
+        # dal 19/07): l'ora vera sta davanti a un suo messaggio ogni 5 (_metti_ore).
+        # Resta in CODA, del momento, la destinazione unica delle riflessioni (25/07).
         if chat:
             try:
                 d2 = json.loads(body)
                 msgs = d2.get("messages", [])
                 if msgs:
-                    g = ["lunedì", "martedì", "mercoledì", "giovedì",
-                         "venerdì", "sabato", "domenica"][time.localtime().tm_wday]
-                    ora = time.strftime(f"[adesso sono le %H:%M di {g} %d/%m/%Y]")
-                    # 25/07: insieme all'ora viaggia la destinazione unica delle
-                    # riflessioni, con le stesse regole (in coda, del momento).
-                    msgs.insert(len(msgs) - 1,
-                                {"role": "system", "content": ora + "\n" + PENSATOIO_DOVE})
+                    if _flusso(body) == "chat":
+                        _metti_ore(msgs)
+                    msgs.insert(len(msgs) - 1, {"role": "system", "content": PENSATOIO_DOVE})
                     body = json.dumps(d2).encode()
             except Exception:
                 pass  # mai bloccare la parola dell'agente per un orologio rotto
