@@ -6,19 +6,24 @@ Il Lux originale (lux.npz, lux-meta.json) e memoria.db NON si toccano: si leggon
   prova        ricomposizione di tutti i ricordi + richiamo da indizi parziali + domande di prova
   richiama "testo"   i ricordi richiamati, ricomposti (non rinforza)
   consegna "testo"   come la consegna all'agente: richiama sopra soglia, RINFORZA gli archi, ricompone
+  correggi CODICE "testo"   1.11.0: un ricordo nuovo che corregge quello di CODICE (l'originale non si tocca)
 Arco = (ricordo, posizione, engramma a, engramma b, parametri fra i due): niente errori di strada sugli engrammi condivisi.
 ponytail: modificatori dei parametri e propagazione non ancora usati nella scelta; via emotiva assente nel richiamo
 (la firma del messaggio richiede il 35B, GPU): le firme degli engrammi sono pronte in F."""
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
 import random
 import sqlite3
 import sys
+import time
 import urllib.request
 
 import numpy as np
 
+import salienza as SA
 import taglia as T
 
 sys.path.insert(0, "/data/memoria-episodica-affettiva")
@@ -27,18 +32,28 @@ import lux as LUX   # solo le funzioni FSRS e l'orologio vissuto (lettura): il L
 # VERSIONE MAJOR.MINOR.PATCH (11/10): MAJOR = formato dei dati incompatibile (lo stato dei rinforzi non si
 # porta), MINOR = ricostruzione con regole nuove (taglio, vettori) o funzione nuova, PATCH = correzione che non
 # cambia i dati. Ogni versione ha la sua cartella: le vecchie restano.
-VERSIONE = "1.7.0"   # 1.3.0: codice dei ricordi; 1.4.0: vettori L29 degli engrammi (lux-l29.npz); 1.5.0: aggiungi();
+VERSIONE = "1.11.0"   # 1.3.0: codice dei ricordi; 1.4.0: vettori L29 degli engrammi (lux-l29.npz); 1.5.0: aggiungi();
 # 1.6.0 (15/10): vettori bge-m3 in float16 su disco e in RAM (misurato sul Lux dell'agente: scarto coseni max 1.4e-4,
 # richiamo identico su 94/94 indizi); il coseno si calcola a blocchi riportati in float32
 # 1.7.0 (15/10): taglio per lingua (taglia.py: le frasi inglesi sicure vanno a en_core_web_lg); costruisci()
 # riusa i vettori degli engrammi gia' presenti nella versione PRECEDENTE (stesso testo = stesso vettore)
+# 1.8.0 (16/10): stabilita' iniziale con la salienza (salienza.py: distintivita' e riferimento a se'),
+# vettori delle frasi dei ricordi in lux-salienza.npz
+# 1.8.1 (16/10): la salienza sta dentro lux.npz (chiavi sal_*) con engrammi e archi, niente file a parte
+# 1.9.0 (16/10): riferimento a se' coi vettori centrati (salienza.py, sal_mu)
+# 1.10.0 (16/10): fino a CONSEGNA_MAX ricordi nella stessa risposta del tool, numerati (risposta_tool)
+# 1.11.0 (16/10): correzioni (correggi): ricordi legati al ricordo corretto da un arco a posizione -1, consegnati
+# in catena (un posto solo fra i CONSEGNA_MAX), originale barrato e mai piu' rinforzato. Fasi 2 e 3: PIANO-1.11-FASI-2-3.md
 DIR = f"/data/memoria-episodica-affettiva/engrammi/lux-{VERSIONE}"
-PRECEDENTE = "/data/memoria-episodica-affettiva/engrammi/lux-1.6.0"   # da qui costruisci() riprende i vettori gia' calcolati
+PRECEDENTE = "/data/memoria-episodica-affettiva/engrammi/lux-1.10.0"   # da qui costruisci() riprende i vettori gia' calcolati
 NPZ, META, STATO = f"{DIR}/lux.npz", f"{DIR}/lux-meta.json", f"{DIR}/lux-stato.npz"
 CRESCITA_PIENA = 100.0   # S/S0 a cui la facilita' tocca il tetto
 FACILITA_MAX = 2.0   # tetto: un ricordo richiamato spesso arriva alla soglia con un indizio fino a 2x piu' debole
 EMOZIONI = [e["en"] for e in json.load(open("/data/memoria-episodica-affettiva/emozioni.json"))]   # ordine fisso dei 51 assi
 EMBEDDER = "http://127.0.0.1:8094/v1/embeddings"
+CONSEGNA_MAX = 4   # 1.10.0 (16/10): ricordi al massimo nella stessa risposta del tool (1.11.0: catene)
+PRIMO_CORREZIONE = 1_000_000   # 1.11.0: numeri delle correzioni, fuori dalla serie di memoria.db
+CORREGGE = "corregge"   # 1.11.0: parametro dell'arco che lega una correzione al ricordo corretto
 SOGLIA_RICHIAMO = 0.2   # sotto: nessun ricordo, nessun turno del tool (taratura_soglia.py, 11/10: negativi max 0.177, positivi giusti min 0.268)
 VTIPO = np.float16   # 1.6.0
 SOGLIA_SEM = 0.8     # coseno minimo perche' un engramma del messaggio ne accenda uno del Lux
@@ -54,6 +69,14 @@ def codice(ts):
         n, r = divmod(n, 36)
         s += "0123456789abcdefghijklmnopqrstuvwxyz"[r]
     return s
+
+
+@contextlib.contextmanager
+def lucchetto():
+    """1.11.0: notturna (aggiungi), correzioni e servizio (salva_stato) non scrivono i file del Lux insieme"""
+    with open(f"{DIR}/.lucchetto", "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
 
 
 def chiave(testo):
@@ -72,6 +95,16 @@ def embed(testi):
 def coseni(Q, V, blocco=65536):
     """Q (float32) contro V (float16): a blocchi di righe riportati in float32, la RAM resta quella del float16"""
     return np.concatenate([Q @ V[i:i + blocco].astype(np.float32).T for i in range(0, len(V), blocco)], axis=1)
+
+
+def s0_ricordi(firme, ranghi, nids):
+    """stabilita' iniziale per ricordo (1.8.0): firma (json o None) + ranghi di salienza (salienza.py)"""
+    out = {}
+    for nid in nids:
+        f = firme.get(nid)
+        f = np.asarray([json.loads(f).get(e, 0.0) for e in EMOZIONI]) if f else None
+        out[nid] = SA.stabilita_iniziale(f, *ranghi.get(nid, (0.0, 0.0)), LUX.S_BASE)
+    return out
 
 
 def param_id(testo, tab):
@@ -113,11 +146,27 @@ def _inserisci(righe, eid, testi, firme_e, tab, A, par_lista, ricordi):
             legami.append(attesa)
             attesa = []
         ricordi[nid] = {"classe": classe, "codice": codice(ts), "n": len(nodi), "testa": legami[0] if legami else [], "coda": attesa}
+        if classe == "correzione":   # non sta in memoria.db: il momento serve a ricostruire lo stesso codice
+            ricordi[nid]["ts"] = ts
         for p in range(1, len(nodi)):
             A.append((nid, p, nodi[p - 1], nodi[p], len(par_lista), len(legami[p])))
             par_lista += legami[p]
         if len(nodi) == 1:   # ricordo di un engramma solo: arco su se stesso, cosi' l'indice lo trova
             A.append((nid, 0, nodi[0], nodi[0], len(par_lista), 0))
+
+
+def _primo(A, nid):
+    """primo engramma del ricordo nid negli archi A (array)"""
+    r = A[(A[:, 0] == nid) & (A[:, 1] >= 0)]
+    return int(r[r[:, 1].argmin(), 2])
+
+
+def _lega(A, par_lista, tab, legami, ricordi, tutti):
+    """1.11.0: archi fra ricordi (posizione -1) dal primo engramma della correzione al primo del ricordo corretto,
+    parametri {corregge}{codice del corretto}; tutti = archi in cui cercare i primi engrammi"""
+    for c, o in legami:
+        A.append((c, -1, _primo(tutti, c), _primo(tutti, o), len(par_lista), 2))
+        par_lista += [param_id(CORREGGE, tab), param_id(ricordi[o]["codice"], tab)]
 
 
 def costruisci():
@@ -126,8 +175,15 @@ def costruisci():
         sys.exit(f"{STATO} esiste: ricostruire cancella i rinforzi degli archi. Spostalo a mano se e' voluto.")
     c = sqlite3.connect(f"file:{T.DB}?mode=ro", uri=True)
     righe = c.execute("select id, testo, firma, classe, ts from nodi where testo != '' order by id").fetchall()
+    legami = []
+    if os.path.exists(f"{PRECEDENTE}/lux.npz"):   # 1.11.0: le correzioni non stanno in memoria.db, si riprendono
+        Lp = Lux.struttura(PRECEDENTE)
+        corr = sorted(n for n, r in Lp.ricordi.items() if r["classe"] == "correzione")
+        righe += [(n, Lp.ricomponi(n), None, "correzione", Lp.ricordi[n]["ts"]) for n in corr]
+        legami = [(n, Lp.corregge[n]) for n in corr if n in Lp.corregge]
     eid, testi, firme_e, tab, A, par_lista, ricordi = {}, [], [], {}, [], [], {}
     _inserisci(righe, eid, testi, firme_e, tab, A, par_lista, ricordi)
+    _lega(A, par_lista, tab, legami, ricordi, np.asarray(A, np.int64))
     print(f"{len(righe)} ricordi -> {len(testi)} engrammi unici, {len(A)} archi, {len(tab)} parametri non preposizione", flush=True)
     V = np.zeros((len(testi), 1024), VTIPO)
     vecchi = {}
@@ -143,13 +199,33 @@ def costruisci():
         V[nuovi] = embed([testi[i] for i in nuovi]).astype(VTIPO)
     F = np.stack([np.mean(x, 0) if x else np.zeros(51, np.float32) for x in firme_e])
     A = np.asarray(A, np.int64)
-    np.savez(NPZ, V=V, F=F, A=A, P=np.asarray(par_lista, np.int32))
+    np.savez(NPZ, V=V, F=F, A=A, P=np.asarray(par_lista, np.int32), **SA.costruisci([(r[0], r[1]) for r in righe], embed))
     altri = [k for k, _ in sorted(tab.items(), key=lambda x: x[1])]
     json.dump({"engrammi": testi, "altri_parametri": altri, "ricordi": ricordi}, open(META, "w"), ensure_ascii=False)
     print(f"scritto {NPZ} e {META}")
 
 
 def aggiungi():
+    """notturna: i ricordi nuovi di memoria.db entrano nel Lux"""
+    with lucchetto():
+        _aggiungi()
+
+
+def correggi(codice_errato, testo, ts=None):
+    """1.11.0 (16/10): un ricordo che corregge quello di codice_errato. Entra nel Lux come gli altri, con un numero
+    fuori dalla serie di memoria.db, legato al corretto da un arco {corregge}{codice}; l'originale non si tocca e da
+    adesso non si rinforza piu'. Una correzione si corregge allo stesso modo (ripensamento). Torna il codice nuovo."""
+    with lucchetto():
+        m = json.load(open(META))
+        ricordi = {int(k): v for k, v in m["ricordi"].items()}
+        o = next(n for n, r in ricordi.items() if r["codice"] == codice_errato)
+        nid = max(PRIMO_CORREZIONE - 1, *ricordi) + 1
+        ts = time.time() if ts is None else ts
+        _aggiungi([(nid, testo, None, "correzione", ts)], [(nid, o)])
+        return codice(ts)
+
+
+def _aggiungi(righe=None, legami=()):
     """1.5.0 (notturna, 12/10): i ricordi nuovi di memoria.db entrano nel Lux senza ricostruire. Engrammi nuovi in coda
     (vettori bge-m3, firme), quelli gia' noti si condividono, archi nuovi in coda con la stabilita' iniziale; i rinforzi
     degli archi esistenti restano. Scrittura atomica: il servizio ricarica quando cambia lux-meta.json.
@@ -158,7 +234,8 @@ def aggiungi():
     z, m = np.load(NPZ), json.load(open(META))
     ricordi = {int(k): v for k, v in m["ricordi"].items()}
     c = sqlite3.connect(f"file:{T.DB}?mode=ro", uri=True)
-    righe = [r for r in c.execute("select id, testo, firma, classe, ts from nodi where testo != '' order by id") if r[0] not in ricordi]
+    if righe is None:
+        righe = [r for r in c.execute("select id, testo, firma, classe, ts from nodi where testo != '' order by id") if r[0] not in ricordi]
     if not righe:
         print("nessun ricordo nuovo")
         return
@@ -169,18 +246,19 @@ def aggiungi():
     firme_e = [[] for _ in testi]
     A, par_lista = [], list(z["P"])
     _inserisci(righe, eid, testi, firme_e, tab, A, par_lista, ricordi)
+    _lega(A, par_lista, tab, legami, ricordi, np.concatenate([z["A"], np.asarray(A, np.int64).reshape(-1, 6)]))
     nuovi = testi[n_e:]
     V = np.concatenate([z["V"].astype(VTIPO), embed(nuovi).astype(VTIPO)]) if nuovi else z["V"].astype(VTIPO)
     F = np.concatenate([z["F"], np.stack([np.mean(x, 0) if x else np.zeros(51, np.float32) for x in firme_e[n_e:]])]) if nuovi else z["F"]
     A = np.concatenate([z["A"], np.asarray(A, np.int64).reshape(-1, 6)])
-    if os.path.exists(STATO):   # archi nuovi: stabilita' iniziale dalla firma del ricordo, nati oggi (vissuto)
+    sal = SA.aggiungi([(r[0], r[1]) for r in righe], embed, z)
+    if os.path.exists(STATO):   # archi nuovi: stabilita' iniziale da firma e salienza del ricordo, nati oggi (vissuto)
         s = np.load(STATO)
-        firme = {r[0]: json.loads(r[2]) for r in righe if r[2]}
-        s0 = np.asarray([LUX.Lux.stabilita_iniziale(np.asarray([firme[int(r)].get(e, 0.0) for e in EMOZIONI]))
-                         if int(r) in firme else LUX.S_BASE for r in A[n_a:, 0]], np.float64)
+        s0r = s0_ricordi({r[0]: r[2] for r in righe}, SA.ranghi(sal), [r[0] for r in righe])
+        s0 = np.asarray([s0r[int(r)] for r in A[n_a:, 0]], np.float64)
         oggi = np.full(len(s0), float(LUX.orologio()))
         np.savez(STATO + ".tmp.npz", S=np.concatenate([s["S"], s0]), S0=np.concatenate([s["S0"], s0]), U=np.concatenate([s["U"], oggi]))
-    np.savez(NPZ + ".tmp.npz", V=V, F=F, A=A, P=np.asarray(par_lista, np.int32))
+    np.savez(NPZ + ".tmp.npz", V=V, F=F, A=A, P=np.asarray(par_lista, np.int32), **sal)
     altri = [k for k, _ in sorted(tab.items(), key=lambda x: x[1])]
     json.dump({"engrammi": testi, "altri_parametri": altri, "ricordi": ricordi}, open(META + ".tmp", "w"), ensure_ascii=False)
     os.replace(NPZ + ".tmp.npz", NPZ)
@@ -192,43 +270,63 @@ def aggiungi():
 
 class Lux:
     def __init__(self):
-        z = np.load(NPZ)
-        self.V, self.F, self.A, self.P = z["V"].astype(VTIPO, copy=False), z["F"], z["A"], z["P"]
-        m = json.load(open(META))
-        self.testi, self.altri, self.ricordi = m["engrammi"], m["altri_parametri"], {int(k): v for k, v in m["ricordi"].items()}
-        self.chiavi = {chiave(t): i for i, t in enumerate(self.testi)}
-        self.da_codice = {r["codice"]: n for n, r in self.ricordi.items()}
+        self._apri(DIR)
         # 1.4.0: vettori L29 degli engrammi (vettori_l29.py), stesso spazio di addr-sem; per la via L29 serve lo
         # stato L29 del messaggio, che legge luxifer (35B, GPU): ancora non usati nel richiamo
         f = f"{DIR}/lux-l29.npz"
         self.L29, self.ha_l29 = (np.load(f)["L"], np.load(f)["presente"]) if os.path.exists(f) else (None, None)
         self.carica_stato()
+
+    @classmethod
+    def struttura(cls, cartella):
+        """engrammi, archi e ricordi di una cartella, senza stato dei rinforzi (per leggere una versione precedente)"""
+        L = cls.__new__(cls)
+        L._apri(cartella)
+        return L
+
+    def _apri(self, cartella):
+        z = np.load(f"{cartella}/lux.npz")
+        self.V, self.F, self.A, self.P = z["V"].astype(VTIPO, copy=False), z["F"], z["A"], z["P"]
+        m = json.load(open(f"{cartella}/lux-meta.json"))
+        self.testi, self.altri, self.ricordi = m["engrammi"], m["altri_parametri"], {int(k): v for k, v in m["ricordi"].items()}
+        self.chiavi = {chiave(t): i for i, t in enumerate(self.testi)}
+        self.da_codice = {r["codice"]: n for n, r in self.ricordi.items()}
+        self.vivi = self.A[:, 1] >= 0   # 1.11.0: posizione -1 = legame fra ricordi, fuori da ricomposizione e richiamo
         self.per_ricordo = {}
-        for j, r in enumerate(self.A[:, 0]):
-            self.per_ricordo.setdefault(int(r), []).append(j)
         self.per_engramma = {}
-        for j, (a, b) in enumerate(self.A[:, 2:4]):
-            self.per_engramma.setdefault(int(a), set()).add(j)
-            self.per_engramma.setdefault(int(b), set()).add(j)
+        for j in np.nonzero(self.vivi)[0].tolist():
+            r, _, a, b = self.A[j, :4].tolist()
+            self.per_ricordo.setdefault(r, []).append(j)
+            self.per_engramma.setdefault(a, set()).add(j)
+            self.per_engramma.setdefault(b, set()).add(j)
+        self.corregge, self.corretto_da = {}, {}   # correzione -> ricordo corretto, e al contrario
+        for j in np.nonzero(~self.vivi)[0].tolist():
+            r, _, _, _, p0, n = self.A[j].tolist()
+            if n == 2 and param_testo(int(self.P[p0]), self.altri) == CORREGGE:
+                o = self.da_codice[param_testo(int(self.P[p0 + 1]), self.altri)]
+                self.corregge[r] = o
+                self.corretto_da.setdefault(o, []).append(r)
+        self.errati = set(self.corretto_da)
 
     # ---------- archi vivi (11/10): stabilita' FSRS per arco, come nel Lux originale ----------
     def carica_stato(self):
-        """S (stabilita') e U (ultimo giorno vissuto) per arco. Al primo avvio: S0 dalla firma del ricordo
-        (LUX.stabilita_iniziale: fino a 3x se emotivamente forte), U = oggi vissuto"""
+        """S (stabilita') e U (ultimo giorno vissuto) per arco. Al primo avvio: S0 da firma e salienza del ricordo
+        (salienza.py, fino a 3x), U = oggi vissuto"""
         if os.path.exists(STATO):
             z = np.load(STATO)
             self.S, self.S0, self.U = z["S"], z["S0"], z["U"]
             return
         c = sqlite3.connect(f"file:{T.DB}?mode=ro", uri=True)
-        firme = {nid: json.loads(f) for nid, f in c.execute("select id, firma from nodi where firma is not null")}
-        s0 = {nid: LUX.Lux.stabilita_iniziale(np.asarray([f.get(e, 0.0) for e in EMOZIONI])) for nid, f in firme.items()}
-        self.S = np.asarray([s0.get(int(r), LUX.S_BASE) for r in self.A[:, 0]], np.float64)
+        firme = dict(c.execute("select id, firma from nodi"))
+        s0 = s0_ricordi(firme, SA.ranghi(np.load(NPZ)), self.ricordi)
+        self.S = np.asarray([s0[int(r)] for r in self.A[:, 0]], np.float64)
         self.S0 = self.S.copy()
         self.U = np.full(len(self.A), float(LUX.orologio()))
 
     def salva_stato(self):
-        np.savez(STATO + ".tmp.npz", S=self.S, S0=self.S0, U=self.U)
-        os.replace(STATO + ".tmp.npz", STATO)
+        with lucchetto():
+            np.savez(STATO + ".tmp.npz", S=self.S, S0=self.S0, U=self.U)
+            os.replace(STATO + ".tmp.npz", STATO)
 
     def facilita_archi(self, oggi=None):
         """per arco: ritenzione R (cala se non si richiama) x crescita della stabilita' dalla nascita, in scala
@@ -241,8 +339,8 @@ class Lux:
 
     def facilita(self, oggi=None):
         """per ricordo: media della facilita' dei suoi archi -> moltiplica il punteggio del richiamo"""
-        f = self.facilita_archi(oggi)
-        idx = np.unique(self.A[:, 0], return_inverse=True)
+        f = self.facilita_archi(oggi)[self.vivi]
+        idx = np.unique(self.A[self.vivi, 0], return_inverse=True)
         media = np.bincount(idx[1], f) / np.bincount(idx[1])
         return dict(zip(idx[0].tolist(), media))
 
@@ -256,20 +354,49 @@ class Lux:
         self.U[js] = oggi
         self.salva_stato()
 
-    def consegna(self, testo, quanti=1, oggi=None, esclusi=()):
+    def consegna(self, testo, quanti=CONSEGNA_MAX, oggi=None, esclusi=()):
         """L'UNICA porta per dare ricordi all'agente (richiamo automatico, 11/10): richiama, rinforza gli archi dei
         ricordi consegnati, restituisce [(id, testo ricomposto)]. Lista vuota = nessun turno del tool.
         esclusi = codici dei ricordi gia' consegnati nella conversazione: si passa al successivo sopra soglia.
         La pagina 3D e le prove usano richiama(), che non rinforza."""
         via = {self.da_codice[c] for c in esclusi if c in self.da_codice}   # gia' nel contesto della conversazione
-        scelti = [x for x in self.richiama(testo, quanti + len(via), oggi=oggi) if x[0] not in via][:quanti]
-        for nid, _ in scelti:
-            self.rinforza(nid, oggi)
-        return [(nid, self.ricordi[nid]["codice"], self.ricomponi(nid)) for nid, _ in scelti]
+        catene = []   # 1.11.0: un ricordo con le sue correzioni occupa un posto solo
+        for nid, _ in self.richiama(testo, len(self.ricordi), oggi=oggi):
+            k = self.catena(nid)
+            if len(catene) == quanti:
+                break
+            if not via & set(k) and all(k[0] != c[0] for c in catene):
+                catene.append(k)
+        scelti = [n for k in catene for n in k]
+        for nid in scelti:
+            if nid not in self.errati:   # un ricordo corretto non si rinforza piu'
+                self.rinforza(nid, oggi)
+        return [(nid, self.ricordi[nid]["codice"], self.ricomponi(nid)) for nid in scelti]
 
-    def risposta_tool(self, nid):
-        """il testo che l'agente riceve nel tool memorinvolontaria (11/10): codice sulla prima riga, poi il testo nudo"""
-        return self.ricordi[nid]["codice"] + "\n" + self.ricomponi(nid)
+    def catena(self, nid):
+        """1.11.0: il ricordo originale e tutte le correzioni che lo seguono (ripensamenti compresi), dalla piu' vecchia"""
+        while nid in self.corregge:
+            nid = self.corregge[nid]
+        k = [nid]
+        for n in k:
+            k += sorted(self.corretto_da.get(n, []))
+        return k
+
+    def risposta_tool(self, nids):
+        """il testo che l'agente riceve nel tool memorinvolontaria (16/10): per ogni ricordo il numero (1°, 2°, ...),
+        il codice sulla riga dopo, poi il testo nudo. 1.11.0: le correzioni seguono il loro originale con una lettera
+        (1a°, 1b°), i ricordi corretti sono barrati (~~testo~~)"""
+        righe, k, radice, lettere = [], 0, None, ""
+        for n in nids:
+            r = self.catena(n)[0]
+            if r != radice:
+                k, radice, lettere = k + 1, r, iter("abcdefghijklmnopqrstuvwxyz")
+                et = f"{k}°"
+            else:
+                et = f"{k}{next(lettere)}°"
+            t = self.ricomponi(n)
+            righe.append(f"{et}\n{self.ricordi[n]['codice']}\n" + (f"~~{t}~~" if n in self.errati else t))
+        return "\n".join(righe)
 
     def ricomponi(self, nid):
         arcs = sorted(self.per_ricordo.get(nid, []), key=lambda j: self.A[j, 1])
@@ -351,8 +478,10 @@ if __name__ == "__main__":
         prova()
     elif cmd == "consegna":   # come la consegna vera: rinforza e scrive lux-stato.npz
         L = Lux()
-        for nid, cod, testo in L.consegna(sys.argv[2]):
-            print(f"== ricordo {nid}\n{L.risposta_tool(nid)}")
+        c = L.consegna(sys.argv[2])
+        print(f"== ricordi {[nid for nid, _, _ in c]}\n{L.risposta_tool([nid for nid, _, _ in c])}")
+    elif cmd == "correggi":
+        print(correggi(sys.argv[2], sys.argv[3]))
     elif cmd == "richiama":
         L = Lux()
         for nid, p in L.richiama(sys.argv[2]):

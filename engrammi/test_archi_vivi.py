@@ -31,7 +31,9 @@ L.U[L.per_ricordo[nid2]] = 1000.0                              # ricordo fresco 
 S_prima = L.S[L.per_ricordo[nid2]].copy()
 c = L.consegna(q2, oggi=1001)
 assert c and c[0][0] == nid2 and parola in c[0][2]             # consegnato e ricomposto
-assert len(c[0][1]) == 16 and L.risposta_tool(nid2).startswith(c[0][1] + "\n")   # codice sulla prima riga
+assert len(c) <= X.CONSEGNA_MAX and len(c[0][1]) == 16
+r = L.risposta_tool([x[0] for x in c])                          # 1.10.0: 1°, codice, testo, 2°, ...
+assert r == "\n".join(f"{k}°\n{x[1]}\n{x[2]}" for k, x in enumerate(c, 1))
 assert (L.S[L.per_ricordo[nid2]] > S_prima).all()              # e rinforzato
 c2 = L.consegna(q2, oggi=1001, esclusi=[c[0][1]])
 assert all(x[0] != nid2 for x in c2)                           # gia' nel contesto: non si richiama di nuovo

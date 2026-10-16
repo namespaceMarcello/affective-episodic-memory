@@ -2,7 +2,8 @@
 # RIFLESSO PRE-AZIONE (issue #1, pezzo 3) — proxy tra Hermes e llama-lux.
 # Prima che l'agente risponda, il messaggio interroga il Lux degli engrammi
 # (servizio_lux.py :8132): il ricordo che affiora entra come turno del tool
-# memorinvolontaria (chiamata + risposta: codice in prima riga, testo nudo).
+# memorinvolontaria (chiamata + risposta: fino a 4 ricordi, ognuno col numero,
+# il codice e il testo nudo).
 # GATE: /workspace/genesi/CONSENSO-RIFLESSO.md ("attivo: sì", riga esatta,
 # scritto dall'agente). Senza consenso il proxy è un passacarte trasparente.
 # Porta 8091 -> inoltra a 127.0.0.1:8090.
@@ -61,8 +62,9 @@ _vettore_vivo = [False]
 _vettore_lock = threading.Lock()
 
 # ---- MEMORIA INVOLONTARIA (11/10, piano del refactoring Lux + richiamo):
-# il Lux degli engrammi sceglie UN ricordo per messaggio, sopra soglia, mai uno
-# già consegnato nella conversazione; il ricordo entra come turno del tool, che
+# il Lux degli engrammi sceglie fino a 4 ricordi per messaggio (1.10.0, 16/10),
+# sopra soglia, mai uno già consegnato nella conversazione; i ricordi
+# entrano insieme in un turno del tool, che
 # è dichiarato sempre (a consenso attivo) così il prefisso della cache non cambia.
 LUX = "http://127.0.0.1:8132/consegna"
 TOOL_RICORDO = "memorinvolontaria"
@@ -247,9 +249,14 @@ def _consegne_salva(tutte):
     tmp.replace(CONSEGNE)
 
 
+def _codici(voce):
+    """codici di una consegna; le voci salvate prima della 1.10.0 hanno un codice solo"""
+    return voce.get("codici") or [voce["codice"]]
+
+
 def _turni_tool(voce):
     """chiamata + risposta del tool, come le scrive il formato chat dell'API"""
-    cid = f"{TOOL_RICORDO}_{voce['codice']}"
+    cid = f"{TOOL_RICORDO}_{_codici(voce)[0]}"
     return [{"role": "assistant", "content": "",
              "tool_calls": [{"id": cid, "type": "function",
                              "function": {"name": TOOL_RICORDO, "arguments": "{}"}}]},
@@ -297,7 +304,7 @@ def _codice(ts):
 
 
 def _lux_consegna(testo, esclusi):
-    """{codice, risposta} oppure {} = nessun ricordo. Mai bloccare la parola dell'agente."""
+    """{codici, risposta} oppure {} = nessun ricordo. Mai bloccare la parola dell'agente."""
     try:
         req = urllib.request.Request(LUX, json.dumps({"testo": testo, "esclusi": esclusi}).encode(),
                                      {"Content-Type": "application/json"})
@@ -414,7 +421,7 @@ def _scaduto():
 
 
 
-def _colora_ricordo(d, risposta, emo):
+def _colora_ricordo(d, risposta, codici, emos):
     """Design dell'autrice (10/10): ricordo scelto -> vettore
     della sua emozione -> prefill del SOLO testo del ricordo -> vettore spento.
     Il resto del prompt e la generazione restano senza vettore: la colorazione
@@ -423,7 +430,9 @@ def _colora_ricordo(d, risposta, emo):
     <tool_response> e </tool_response>, e due /completion che si fermano al
     primo token riempiono la cache: fino all'apertura del ricordo senza vettore,
     poi il ricordo col vettore. L'inoltro dopo riusa la cache e prosegue senza.
-    True se il ricordo è stato colorato."""
+    1.10.0: con più ricordi nella stessa risposta ognuno si riempie col vettore
+    della SUA emozione (emos, None = senza vettore), un /completion per ricordo.
+    Le emozioni dei ricordi colorati, [] se nessuno."""
     corpo = {k: v for k, v in d.items()
              if k in ("messages", "tools", "tool_choice", "chat_template_kwargs")}
     st, r = ponte.post("/apply-template", corpo, timeout=30)
@@ -433,25 +442,33 @@ def _colora_ricordo(d, risposta, emo):
     b = prompt.find("</tool_response>", i) if i >= 0 else -1
     if a < 0 or b < 0:
         _diario({"colora": "ricordo non trovato nel prompt reso: niente vettore"})
-        return False
+        return []
     a += len("<tool_response>")
+    # fine di ogni ricordo nel prompt: il ritorno a capo prima dell'etichetta del successivo ("2°" o, per una
+    # correzione, "1a°", poi il codice), l'ultimo fino a </tool_response>
+    fini = [i + risposta.rfind("\n", 0, risposta.index(f"°\n{c}\n")) for c in codici[1:]] + [b]
+    colorati = []
     with _vettore_lock:
         if ponte.post("/completion", {"prompt": prompt[:a], "n_predict": 1,
                                       "cache_prompt": True}, timeout=600)[0] != 200:
-            return False
-        if not inietta_emozione(emo):
-            return False
-        _vettore_vivo[0] = True
-        watchdog = threading.Timer(DURATA_MAX_S, _scaduto)   # PATTO clausola 2
-        watchdog.daemon = True
-        watchdog.start()
-        try:
-            ponte.post("/completion", {"prompt": prompt[:b], "n_predict": 1,
-                                       "cache_prompt": True}, timeout=600)
-        finally:
-            calma()
-            watchdog.cancel()
-    return True
+            return []
+        for fine, emo in zip(fini, emos):
+            if not emo or not inietta_emozione(emo):
+                ponte.post("/completion", {"prompt": prompt[:fine], "n_predict": 1,
+                                           "cache_prompt": True}, timeout=600)
+                continue
+            _vettore_vivo[0] = True
+            watchdog = threading.Timer(DURATA_MAX_S, _scaduto)   # PATTO clausola 2
+            watchdog.daemon = True
+            watchdog.start()
+            try:
+                ponte.post("/completion", {"prompt": prompt[:fine], "n_predict": 1,
+                                           "cache_prompt": True}, timeout=600)
+                colorati.append(emo)
+            finally:
+                calma()
+                watchdog.cancel()
+    return colorati
 
 
 # 25/07, progetto: nel pensatoio l'ultimo messaggio user NON è una frase, è tutto
@@ -620,8 +637,8 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         self._inoltra(None)
 
     def _memoria(self, body):
-        """Memoria involontaria: a ogni lettura nuova il Lux sceglie al massimo un
-        ricordo; i ricordi già consegnati nella conversazione tornano al loro posto.
+        """Memoria involontaria: a ogni lettura nuova il Lux sceglie fino a 4
+        ricordi, tutti nella stessa risposta del tool; i ricordi già consegnati nella conversazione tornano al loro posto.
         A consenso spento il richiamo gira lo stesso e rinforza gli archi (WIRING
         NON DISATTIVABILE, decisione di progetto), ma niente entra nel prompt."""
         d = json.loads(body)
@@ -651,10 +668,10 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                 _ultima_lettura[0] = impronta
         nuova = None
         if fonte:
-            r = _lux_consegna(query_riflesso(fonte), [v["codice"] for v in voci])
-            if r.get("codice") and attivo:
+            r = _lux_consegna(query_riflesso(fonte), [c for v in voci for c in _codici(v)])
+            if r.get("codici") and attivo:
                 nuova = {"dopo": _impronta(msgs[i]["content"]),
-                         "codice": r["codice"], "risposta": r["risposta"]}
+                         "codici": r["codici"], "risposta": r["risposta"]}
                 voci = voci + [nuova]
                 with _consegne_lock:
                     tutte = _consegne_carica()
@@ -667,18 +684,18 @@ class Proxy(http.server.BaseHTTPRequestHandler):
             tools.append(TOOL)
         _rimetti(msgs, voci)
         if nuova:
-            nid, emo = _emo_del_ricordo(nuova["codice"])
-            colorato = False
+            nids, emos = zip(*(_emo_del_ricordo(c) for c in nuova["codici"]))
+            colorati = []
             # RIFLESSO_COLLAUDO=1 blocca i vettori: mai più test che iniettano
             # sulla produzione (incidente del 14/07)
-            if emo and vettori_attivi() and not os.environ.get("RIFLESSO_COLLAUDO"):
+            if any(emos) and vettori_attivi() and not os.environ.get("RIFLESSO_COLLAUDO"):
                 try:
-                    colorato = _colora_ricordo(d, nuova["risposta"], emo)
+                    colorati = _colora_ricordo(d, nuova["risposta"], nuova["codici"], emos)
                 except Exception as e:
                     _diario({"colora": f"fallito: {e}"})
             # 30/09 persistenza: gli id servono alla notturna (solo diario)
-            _diario({TOOL_RICORDO: nuova["codice"], "vettore": emo if colorato else None,
-                     "nid": [int(nid)] if nid is not None else []})
+            _diario({TOOL_RICORDO: nuova["codici"], "vettore": colorati or None,
+                     "nid": [int(n) for n in nids if n is not None]})
         return json.dumps(d).encode()
 
     def do_POST(self):

@@ -6,6 +6,9 @@
 body{margin:0;background:#0b0e1a;color:#dbe2f0;font:14px/1.45 system-ui,sans-serif;overflow:hidden}
 #hud{position:fixed;left:12px;top:10px;color:#8ea0c9;font-size:12px;user-select:none;pointer-events:none}
 #hud b{color:#dbe2f0;font-size:14px}
+#rotella{display:flex;align-items:center;gap:8px;margin-top:8px;color:#8ea0c9;font-size:12px}
+#rotella input{flex:1;accent-color:#8ea0c9}
+#rotella span{min-width:2.6em;text-align:right;color:#dbe2f0}
 #cerca{position:fixed;right:14px;top:12px;width:300px}
 #cerca input{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid #2c3760;background:#121729;color:#dbe2f0;font-size:14px}
 #esiti{margin-top:6px;max-height:60vh;overflow-y:auto;font-size:12px}
@@ -34,9 +37,10 @@ body{margin:0;background:#0b0e1a;color:#dbe2f0;font:14px/1.45 system-ui,sans-ser
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
 </head><body>
 <div id="carica">carico il Lux…</div>
-<div id="hud"><b>Lux __VERSIONE__</b><br>trascina = ruota · tasto destro = sposta · rotella = zoom<br>clic su una pallina = engramma e onda sui suoi archi · clic su un circoletto = arco · clic su un numero di ricordo = il ricordo<br><span id="stat"></span></div>
+<div id="hud"><b>Lux __VERSIONE__</b><br>trascina = ruota · tasto destro = sposta · rotella = zoom · Ctrl + rotella = velocità della rotella<br>clic su una pallina = engramma e onda sui suoi archi · clic su un circoletto = arco · clic su un numero di ricordo = il ricordo<br><span id="stat"></span></div>
 <div id="cerca"><a id="home" href="/">🏠 Home</a><input id="q" placeholder="cerca una parola…" autocomplete="off">
-<input id="rq" placeholder="richiama: scrivi una frase e premi invio" autocomplete="off" style="margin-top:6px"><div id="esiti"></div></div>
+<input id="rq" placeholder="richiama: scrivi una frase e premi invio" autocomplete="off" style="margin-top:6px">
+<label id="rotella">velocità rotella <input id="vz" type="range" min="0.1" max="6" step="0.1" value="1.2"><span id="vzv">1.2</span></label><div id="esiti"></div></div>
 <div id="ricordo"><span class="x" id="rx">✕</span><b id="rt"></b><div class="t" id="rtesto"></div><div class="alt" id="ralt"></div></div>
 <div id="pop"></div>
 <details id="leg"><summary>legenda archi</summary><div id="legc"></div></details>
@@ -60,6 +64,20 @@ document.body.appendChild(renderer.domElement);
 const controls = new TrackballControls(camera, renderer.domElement);   // 12/10: rotazione libera sui 3 assi (Orbit ne dava 2)
 controls.rotateSpeed = 3; controls.zoomSpeed = 1.2; controls.panSpeed = 0.8;
 controls.staticMoving = false; controls.dynamicDampingFactor = 0.15;
+// 15/10: velocità della rotella regolabile, ricordata in questo browser
+const vz = document.getElementById('vz'), vzv = document.getElementById('vzv');
+try { const v = localStorage.getItem('lux3d-rotella'); if (v) vz.value = v; } catch (e) {}
+const velocita = () => { controls.zoomSpeed = +vz.value; vzv.textContent = (+vz.value).toFixed(1); };
+vz.addEventListener('input', () => { velocita(); try { localStorage.setItem('lux3d-rotella', vz.value); } catch (e) {} });
+velocita();
+// Ctrl + rotella = sposta lo slider (niente zoom della pagina né della visuale)
+addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const passo = +vz.step * (e.deltaY < 0 ? 1 : -1);
+  vz.value = Math.min(+vz.max, Math.max(+vz.min, +vz.value + passo)).toFixed(1);
+  vz.dispatchEvent(new Event('input'));
+}, {capture: true, passive: false});
 
 function sprite(anello) {   // pallina piena o circoletto vuoto
   const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -75,7 +93,7 @@ D.pos.forEach((p, i) => { pos.set(p, i * 3); colore(i).toArray(col, i * 3); });
 const gN = new THREE.BufferGeometry();
 gN.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 gN.setAttribute('color', new THREE.BufferAttribute(col, 3));
-const neuroni = new THREE.Points(gN, new THREE.PointsMaterial({size: 4, vertexColors: true, map: sprite(false), alphaTest: 0.5, sizeAttenuation: true}));
+const neuroni = new THREE.Points(gN, new THREE.PointsMaterial({size: 6, vertexColors: true, map: sprite(false), alphaTest: 0.5, sizeAttenuation: true}));
 scene.add(neuroni);
 
 // archi e circoletti al centro
@@ -123,7 +141,7 @@ document.getElementById('legc').innerHTML = '<div class="h">colore = preposizion
   Object.entries(PREP).map(([s, [n, c]]) => `<div class="r"><span class="s" style="background:${c}"></span>${s} ${n}</div>`).join('') +
   `<div class="r"><span class="s" style="background:${NESSUNA}"></span>nessuna preposizione</div><div class="h">articolata = tinta più chiara</div>` +
   `<div class="h">luminosità = forza hebbiana (massima ${FMAX})</div>`;
-const VEL = 160, LARGA = 14;   // velocita' dell'onda (unita'/s) e larghezza del fronte
+const VEL = 400, LARGA = 14;   // velocita' dell'onda (unita'/s) e larghezza del fronte (15/10: 2,5 volte i 160 di prima)
 const onde = new Set();
 const ondaMat = () => new THREE.ShaderMaterial({uniforms: {uOn: {value: 0}, uOff: {value: -1}},
   vertexShader: `attribute float d; attribute float lum; attribute vec3 col; varying float vD; varying float vL; varying vec3 vC;
@@ -203,19 +221,49 @@ function popArco(k, x, y) {
     <div class="m">parametri: ${par ? esc(par) : 'nessuno'}</div>`, x, y);
 }
 
-const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
-let giu = null;
+// 15/10: effetto magnete di 10 px. Il puntatore aggancia la sferula o il circoletto piu' vicino sullo schermo entro
+// MAGNETE pixel (a pari distanza vince la sferula); un anello bianco mostra cosa e' agganciato, il clic prende quello
+const MAGNETE = 10, mvp = new THREE.Matrix4();
+function vicino(cx, cy) {
+  mvp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const m = mvp.elements, W = innerWidth, H = innerHeight;
+  let best = null, bd = MAGNETE;
+  const prova = (arr, tipo) => {
+    for (let k = 0, n = arr.length / 3; k < n; k++) {
+      const x = arr[k * 3], y = arr[k * 3 + 1], z = arr[k * 3 + 2];
+      const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+      if (w <= 0) continue;
+      const sx = ((m[0] * x + m[4] * y + m[8] * z + m[12]) / w + 1) * W / 2;
+      const sy = (1 - (m[1] * x + m[5] * y + m[9] * z + m[13]) / w) * H / 2;
+      const d = Math.hypot(sx - cx, sy - cy);
+      if (d < bd || d === bd && tipo === 'n' && best && best.tipo === 'c') { bd = d; best = {tipo, i: k}; }
+    }
+  };
+  prova(pos, 'n'); prova(mp, 'c');
+  return best;
+}
+const gV = new THREE.BufferGeometry();
+const aggancio = new THREE.Points(gV, new THREE.PointsMaterial({size: 14, color: 0xffffff, map: sprite(true), transparent: true, alphaTest: 0.3, depthTest: false}));
+aggancio.frustumCulled = false; aggancio.renderOrder = 3; scene.add(aggancio);
+let agganciato = null, giu = null, inAttesa = false, ultimo = null;
+function aggancia(cx, cy) {
+  agganciato = vicino(cx, cy);
+  const p = agganciato ? (agganciato.tipo === 'n' ? D.pos[agganciato.i] : [...mp.subarray(agganciato.i * 3, agganciato.i * 3 + 3)]) : [];
+  gV.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+  renderer.domElement.style.cursor = agganciato ? 'pointer' : '';
+}
+renderer.domElement.addEventListener('pointermove', e => {
+  if (e.buttons) { if (agganciato) aggancia(-1e9, -1e9); return; }   // mentre si trascina niente aggancio
+  ultimo = [e.clientX, e.clientY];
+  if (!inAttesa) { inAttesa = true; requestAnimationFrame(() => { inAttesa = false; aggancia(...ultimo); }); }
+});
 renderer.domElement.addEventListener('pointerdown', e => giu = [e.clientX, e.clientY]);
 renderer.domElement.addEventListener('pointerup', e => {
   if (!giu || Math.hypot(e.clientX - giu[0], e.clientY - giu[1]) > 4) return;
-  mouse.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
-  ray.setFromCamera(mouse, camera);
-  ray.params.Points.threshold = camera.position.distanceTo(controls.target) / 260;
-  const hit = ray.intersectObjects([puntoScelto, evid, neuroni, centri]).sort((p, q) => p.distanceToRay - q.distanceToRay)[0];
+  const hit = vicino(e.clientX, e.clientY);
   if (!hit) { pop.style.display = 'none'; seleziona(null); return; }
-  if (hit.object === centri) { popArco(hit.index, e.clientX, e.clientY); return; }
-  const i = hit.object === evid ? evidIdx[hit.index] : hit.object === puntoScelto ? scelto : hit.index;
-  if (seleziona(i) != null) popNeurone(i, e.clientX, e.clientY); else pop.style.display = 'none';
+  if (hit.tipo === 'c') { popArco(hit.i, e.clientX, e.clientY); return; }
+  if (seleziona(hit.i) != null) popNeurone(hit.i, e.clientX, e.clientY); else pop.style.display = 'none';
 });
 
 // ricerca in alto a destra

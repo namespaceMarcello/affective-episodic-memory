@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Servizio del Lux degli engrammi per il riflesso (11/10/2026). Solo 127.0.0.1:8132.
   POST /consegna  {"testo": "...", "esclusi": ["codice", ...]}
-       -> {"codice": ..., "risposta": "<codice>\\n<testo>"} da mettere nel tool memorinvolontaria, oppure {} = niente
-       Rinforza gli archi del ricordo consegnato (lux-<VERSIONE>/lux-stato.npz).
+       -> {"codici": [...], "risposta": "1°\\n<codice>\\n<testo>\\n2°..."} da mettere nel tool memorinvolontaria,
+       oppure {} = niente. Fino a X.CONSEGNA_MAX ricordi (1.10.0), o catene di correzioni (1.11.0). Rinforza gli archi
+       dei ricordi consegnati, tranne quelli corretti
+  POST /correggi  {"codice": "...", "testo": "..."} -> {"codice": codice della correzione} (1.11.0) (lux-<VERSIONE>/lux-stato.npz).
   GET  /salute    -> {"versione": ..., "ricordi": ..., "engrammi": ...}
 Server a un filo solo: due consegne non scrivono lo stato insieme.
 ponytail: libreria standard, niente framework"""
@@ -42,16 +44,22 @@ class H(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/consegna":
+        if self.path not in ("/consegna", "/correggi"):
             self.send_error(404)
             return
         try:
             d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            if self.path == "/correggi":
+                if str(d.get("codice", "")) not in lux().da_codice or not str(d.get("testo", "")).strip():
+                    self.rispondi({"errore": "codice sconosciuto o testo vuoto"}, 400)
+                    return
+                self.rispondi({"codice": X.correggi(d["codice"], str(d["testo"]))})
+                return
             c = lux().consegna(str(d.get("testo", "")), esclusi=d.get("esclusi", []))
         except Exception as e:   # il riflesso non deve mai fermarsi per il Lux: errore = nessun ricordo
             self.rispondi({"errore": repr(e)}, 500)
             return
-        self.rispondi({"codice": c[0][1], "risposta": L.risposta_tool(c[0][0])} if c else {})
+        self.rispondi({"codici": [x[1] for x in c], "risposta": L.risposta_tool([x[0] for x in c])} if c else {})
 
     def log_message(self, *a):
         pass
