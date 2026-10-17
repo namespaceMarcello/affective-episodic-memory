@@ -82,6 +82,7 @@ CONSEGNE_MAX = 50       # conversazioni ricordate (le più recenti)
 _consegne_lock = threading.Lock()
 
 # ---- ORA DEI MESSAGGI (16/10): un messaggio dell'utente ogni 5 porta davanti
+# (17/10: l'ora di arrivo si registra per TUTTI in "arrivi", l'agente ne vede una ogni 5)
 # l'ora VERA del suo arrivo, [d/m/aaaa|h:mm]. L'ora si fissa quando il messaggio
 # arriva e si ricorda (come le consegne): a ogni richiesta lo stesso testo, così
 # il prefisso della cache resta stabile. I messaggi già nella conversazione prima
@@ -351,9 +352,13 @@ def _metti_ore(msgs, adesso=None):
             visti.add(imp)
             c["visti"].append(imp)
             nuovi = True
-            # solo il messaggio che arriva adesso ha un'ora vera
-            if len(c["visti"]) % OGNI == 1 and m is suoi[-1] and msgs[-1] is m:
-                c["ore"][imp] = _ora_corta(time.localtime(adesso))
+            # solo il messaggio che arriva adesso ha un'ora vera; si registra per tutti
+            # (17/10: serve a misurare il tempo che passa), all'agente va uno ogni OGNI
+            if m is suoi[-1] and msgs[-1] is m:
+                ora = _ora_corta(time.localtime(adesso))
+                c.setdefault("arrivi", {})[imp] = ora
+                if len(c["visti"]) % OGNI == 1:
+                    c["ore"][imp] = ora
         if nuovi:
             c["ts"] = time.time()
             vive = dict(sorted(tutte.items(), key=lambda kv: kv[1].get("ts", 0))[-CONSEGNE_MAX:])

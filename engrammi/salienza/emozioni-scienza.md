@@ -4,7 +4,7 @@ Impatto = quanto fissa il ricordo alla nascita (attivazione, amigdala; negativo 
 Permanenza = durata dell'episodio (Verduyn e Lavrijsen 2015, 27 emozioni, rango 1 = piu' lunga; durata spiegata per ~43% da importanza dell'evento e rimuginio).
 Dissipazione = sbiadimento della carica nel ricordo (Fading Affect Bias; eccezione: colpa/vergogna per un torto fatto da se', la carica non sbiadisce o cresce, Aarhus 2026 preliminare; l'ansia frena lo sbiadimento).
 Fonte: M = misurato su quell'emozione, S = ricavato da un'emozione vicina o dall'attivazione.
-Divisione proposta (da confermare): positive 16, negative 28, neutre 7.
+Divisione ACCETTATA da l'utente: positive 16, negative 28, neutre 7.
 
 | emozione | impatto | permanenza | dissipazione | fonte |
 |---|---|---|---|---|
